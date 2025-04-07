@@ -7,7 +7,11 @@ from django.contrib.auth.hashers import check_password
 from pymongo import MongoClient
 from gridfs import GridFS
 from bson.objectid import ObjectId
+import certifi
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 # Login view
 from django.contrib.auth.hashers import make_password
 from .models import Insurance ,Register
@@ -54,9 +58,10 @@ logger = logging.getLogger(__name__)
 @csrf_exempt
 def insurance(request):
     try:
-        client = MongoClient("mongodb://3.109.210.34:27017/")  # MongoDB connection
-        db = client['insurance_db']
-        fs = GridFS(db)
+
+        client = MongoClient(os.getenv("DB_HOST"))  # Connect to MongoDB
+        db = client[os.getenv("DB_NAME")]           # Get the database
+        fs = GridFS(db)                             # Initialize GridFS
 
         if request.method == 'POST':
             data = request.data.copy()
@@ -84,16 +89,20 @@ def insurance(request):
                     billing_file_name = f"{patient_uhid}_{patient_name}_billing"
                     billing_file_id = fs.put(billing_file, filename=billing_file_name)
                     data['billingFile'] = str(billing_file_id)
-                
+                    del request.FILES['billingFile']  # 🛠 Remove file object
+
                 if query_file:
                     query_file_name = f"{patient_uhid}_{patient_name}_query"
                     query_file_id = fs.put(query_file, filename=query_file_name)
                     data['queryUpload'] = str(query_file_id)
+                    del request.FILES['queryUpload']  # 🛠 Remove file object
 
                 if query_response_file:
                     query_response_file_name = f"{patient_uhid}_{patient_name}queryresponse"
                     query_response_file_id = fs.put(query_response_file, filename=query_response_file_name)
                     data['queryResponse'] = str(query_response_file_id)
+                    del request.FILES['queryResponse']  # 🛠 Remove file object
+
                 
 
                 # Log the file ids
@@ -129,9 +138,11 @@ def insurance(request):
 
 def serve_file(request, file_id):
     # MongoDB connection
-    client = MongoClient("mongodb://3.109.210.34:27017/")
-    db = client['insurance']
-    fs = GridFS(db)
+
+
+    client = MongoClient(os.getenv("DB_HOST"))  # Connect to MongoDB
+    db = client[os.getenv("DB_NAME")]           # Get the database
+    fs = GridFS(db)                             # Initialize GridFS                       # Initialize GridFS
     
     try:
         # Convert the file_id from string to ObjectId
@@ -162,9 +173,10 @@ from datetime import datetime
 @api_view(['POST', 'GET'])
 def submit_daycare(request):
     # Connect to the MongoDB instance
-    client = MongoClient("mongodb://3.109.210.34:27017/")
-    db = client['insurance']
-    fs = GridFS(db)
+
+    client = MongoClient(os.getenv("DB_HOST"))  # Connect to MongoDB
+    db = client[os.getenv("DB_NAME")]           # Get the database
+    fs = GridFS(db)                             # Initialize GridFS
 
     if request.method == 'POST':
         # Handle the file upload if a file is provided
@@ -205,3 +217,66 @@ def submit_daycare(request):
 
 
 
+@api_view(['PUT'])
+@csrf_exempt
+def insurance_update(request, bill_number):
+    try:
+        # Find the insurance record by bill number
+        insurance = Insurance.objects.get(billNumber=bill_number)
+        
+        # Get data from request
+        data = request.data.copy()
+        
+        # Handle file uploads
+        client = MongoClient(os.getenv("DB_HOST"))
+        db = client[os.getenv("DB_NAME")]
+        fs = GridFS(db)
+        
+        billing_file = request.FILES.get('billingFile')
+        query_file = request.FILES.get('queryUpload')
+        query_response_file = request.FILES.get('queryResponse')
+        
+        # Extract patient info for filename construction
+        patient_uhid = data.get('patient_uhid', insurance.patient_uhid).strip()
+        patient_name = data.get('patient_name', insurance.patient_name).strip()
+        
+        # Handle the file uploads similar to the POST method
+        if billing_file:
+            billing_file_name = f"{patient_uhid}_{patient_name}_billing"
+            billing_file_id = fs.put(billing_file, filename=billing_file_name)
+            data['billingFile'] = str(billing_file_id)
+        elif insurance.billingFile and 'billingFile' not in data:
+            # Keep existing file if no new file is uploaded
+            data['billingFile'] = insurance.billingFile
+            
+        if query_file:
+            query_file_name = f"{patient_uhid}_{patient_name}_query"
+            query_file_id = fs.put(query_file, filename=query_file_name)
+            data['queryUpload'] = str(query_file_id)
+        elif insurance.queryUpload and 'queryUpload' not in data:
+            data['queryUpload'] = insurance.queryUpload
+            
+        if query_response_file:
+            query_response_file_name = f"{patient_uhid}_{patient_name}_queryresponse"
+            query_response_file_id = fs.put(query_response_file, filename=query_response_file_name)
+            data['queryResponse'] = str(query_response_file_id)
+        elif insurance.queryResponse and 'queryResponse' not in data:
+            data['queryResponse'] = insurance.queryResponse
+        
+        # Update the record
+        serializer = InsuranceSerializer(insurance, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        return Response({"error": "Invalid data", "details": serializer.errors}, 
+                        status=status.HTTP_400_BAD_REQUEST)
+                        
+    except Insurance.DoesNotExist:
+        return Response({"error": "Insurance record not found"}, 
+                        status=status.HTTP_404_NOT_FOUND)
+                        
+    except Exception as e:
+        logger.exception("An error occurred during insurance update")
+        return Response({"error": "An error occurred", "details": str(e)}, 
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
