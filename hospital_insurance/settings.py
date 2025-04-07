@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-d^)yc)$9xs@yq$__z$0up-d4c%yykmrzps73v&0l=680wy3b6)
 DEBUG = True
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000","http://localhost:3001",'https://shinovadatabase.in','https://insurance.shinovadatabase.in',"https://www.salemcosmeticclinic.shinova.in",'https://www.insurance.shinova.in/','3.110.108.14']
+    "http://localhost:3000","http://localhost:3001",'https://shinovadatabase.in','https://insurance.shinovadatabase.in',"https://www.salemcosmeticclinic.shinova.in",'https://www.insurance.shinova.in/','65.1.3.98']
 
 CORS_ALLOW_CREDENTIALS = True
 
