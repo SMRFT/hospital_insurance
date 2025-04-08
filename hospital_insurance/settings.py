@@ -79,15 +79,19 @@ CORS_ALLOWED_ORIGINS = [
 
 # Database
 # https://docs.djangoproject.com/en/3.2/ref/settings/#databases
-
+import certifi
+import os
+from dotenv import load_dotenv
+load_dotenv()
 DATABASES = {
     'default': {
         'ENGINE': 'djongo',
-        'NAME': 'insurance',
+        'NAME': os.getenv("DB_NAME"),
         'ENFORCE_SCHEMA': False,
         'CLIENT': {
-            'host': 'mongodb://3.109.210.34:27017/',
-        }  
+            'host': os.getenv("DB_HOST"),
+            'tls': False,  # :white_check_mark: Disable TLS if not required
+        }
     }
 }
 
