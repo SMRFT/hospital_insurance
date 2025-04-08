@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-d^)yc)$9xs@yq$__z$0up-d4c%yykmrzps73v&0l=680wy3b6)
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS= ["http://localhost:3000","http://localhost:3001",'https://shinovadatabase.in','https://insurance.shinovadatabase.in',"https://www.salemcosmeticclinic.shinova.in",'https://www.insurance.shinova.in/','65.1.3.98','127.0.0.1']
+ALLOWED_HOSTS= ["http://localhost:3000","http://localhost:3001",'node221864-env-0990718.in1.cloudlets.co.in','https://insurance.shinovadatabase.in',"https://www.salemcosmeticclinic.shinova.in",'https://www.insurance.shinova.in/','65.1.3.98','127.0.0.1']
 CORS_ALLOW_CREDENTIALS = True
 
 
