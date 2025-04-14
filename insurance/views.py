@@ -68,47 +68,34 @@ def insurance(request):
             billing_file = request.FILES.get('billingFile')
             query_file = request.FILES.get('queryUpload')
             query_response_file = request.FILES.get('queryResponse')
-            
-            # Log the files being received
-            logger.debug(f"Received billing file: {billing_file}")
-            logger.debug(f"Received query file: {query_file}")
 
-            # Extract patient_uhid and patient_name for filename construction
+            # Extract patient_uhid and patient_name for file naming
             patient_uhid = data.get('patient_uhid', '').strip()
             patient_name = data.get('patient_name', '').strip()
 
-            if not patient_uhid or not patient_name:
+            # Only validate patient_uhid and patient_name if any file is being uploaded
+            if any([billing_file, query_file, query_response_file]) and (not patient_uhid or not patient_name):
                 return Response(
-                    {"error": "patient_uhid and patient_name are required for file naming"},
+                    {"error": "patient_uhid and patient_name are required for file naming if uploading files"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Save files to GridFS with customized filenames
             try:
+                # Save files to GridFS if present
                 if billing_file:
                     billing_file_name = f"{patient_uhid}_{patient_name}_billing"
                     billing_file_id = fs.put(billing_file, filename=billing_file_name)
                     data['billingFile'] = str(billing_file_id)
-                    del request.FILES['billingFile']  # 🛠 Remove file object
 
                 if query_file:
                     query_file_name = f"{patient_uhid}_{patient_name}_query"
                     query_file_id = fs.put(query_file, filename=query_file_name)
                     data['queryUpload'] = str(query_file_id)
-                    del request.FILES['queryUpload']  # 🛠 Remove file object
 
                 if query_response_file:
-                    query_response_file_name = f"{patient_uhid}_{patient_name}queryresponse"
+                    query_response_file_name = f"{patient_uhid}_{patient_name}_queryresponse"
                     query_response_file_id = fs.put(query_response_file, filename=query_response_file_name)
                     data['queryResponse'] = str(query_response_file_id)
-                    del request.FILES['queryResponse']  # 🛠 Remove file object
-
-                
-
-                # Log the file ids
-                logger.debug(f"Saved billing file id: {data['billingFile']}")
-                logger.debug(f"Saved query file id: {data['queryUpload']}")
-                logger.debug(f"Saved query response file id: {data['queryResponse']}")
 
             except Exception as gridfs_error:
                 logger.error(f"GridFS Error: {gridfs_error}")
@@ -117,12 +104,12 @@ def insurance(request):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
-            # Validate and save the data
+            # Validate and save the rest of the form data
             serializer = InsuranceSerializer(data=data)
             if serializer.is_valid():
                 serializer.save()
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
-            
+
             logger.error(f"Serializer errors: {serializer.errors}")
             return Response({"error": "Invalid data", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -211,72 +198,95 @@ def submit_daycare(request):
         serializer = DaycareSerializer(daycare_records, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+import os
+import json
+import logging
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from pymongo import MongoClient
+from gridfs import GridFS
+from .models import Insurance
+from .serializers import InsuranceSerializer
 
-
-
-
-
+logger = logging.getLogger(__name__)
 
 @api_view(['PUT'])
 @csrf_exempt
-def insurance_update(request, bill_number):
+def insurance_update_combined(request, bill_number):
     try:
-        # Find the insurance record by bill number
+        # Retrieve the insurance record
         insurance = Insurance.objects.get(billNumber=bill_number)
-        
-        # Get data from request
         data = request.data.copy()
-        
-        # Handle file uploads
+
+        # Connect to MongoDB GridFS
         client = MongoClient(os.getenv("DB_HOST"))
         db = client[os.getenv("DB_NAME")]
         fs = GridFS(db)
-        
+
+        # Handle file uploads
         billing_file = request.FILES.get('billingFile')
         query_file = request.FILES.get('queryUpload')
         query_response_file = request.FILES.get('queryResponse')
-        
-        # Extract patient info for filename construction
+
+        # Extract patient info for file naming
         patient_uhid = data.get('patient_uhid', insurance.patient_uhid).strip()
         patient_name = data.get('patient_name', insurance.patient_name).strip()
-        
-        # Handle the file uploads similar to the POST method
+
         if billing_file:
             billing_file_name = f"{patient_uhid}_{patient_name}_billing"
             billing_file_id = fs.put(billing_file, filename=billing_file_name)
             data['billingFile'] = str(billing_file_id)
         elif insurance.billingFile and 'billingFile' not in data:
-            # Keep existing file if no new file is uploaded
             data['billingFile'] = insurance.billingFile
-            
+
         if query_file:
             query_file_name = f"{patient_uhid}_{patient_name}_query"
             query_file_id = fs.put(query_file, filename=query_file_name)
             data['queryUpload'] = str(query_file_id)
         elif insurance.queryUpload and 'queryUpload' not in data:
             data['queryUpload'] = insurance.queryUpload
-            
+
         if query_response_file:
             query_response_file_name = f"{patient_uhid}_{patient_name}_queryresponse"
             query_response_file_id = fs.put(query_response_file, filename=query_response_file_name)
             data['queryResponse'] = str(query_response_file_id)
         elif insurance.queryResponse and 'queryResponse' not in data:
             data['queryResponse'] = insurance.queryResponse
-        
-        # Update the record
+
+        # Handle numeric field updates
+        insurance.billAmount = data.get("billAmount", insurance.billAmount)
+        insurance.claimedAmount = data.get("claimedAmount", insurance.claimedAmount)
+        insurance.pendingAmount = data.get("pendingAmount", insurance.pendingAmount)
+
+        # Parse edit history
+        edit_history_json = data.get("editHistory")
+        if edit_history_json:
+            try:
+                insurance.editHistory = json.loads(edit_history_json)
+            except json.JSONDecodeError:
+                return Response({"error": "Invalid JSON in editHistory"}, status=400)
+
+        # Save numeric fields and editHistory separately
+        insurance.save()
+
+        # Save all other fields using serializer
         serializer = InsuranceSerializer(insurance, data=data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        
-        return Response({"error": "Invalid data", "details": serializer.errors}, 
-                        status=status.HTTP_400_BAD_REQUEST)
-                        
+            return Response({"message": "Insurance updated successfully", "data": serializer.data}, status=200)
+        else:
+            return Response({"error": "Invalid data", "details": serializer.errors}, status=400)
+
     except Insurance.DoesNotExist:
-        return Response({"error": "Insurance record not found"}, 
-                        status=status.HTTP_404_NOT_FOUND)
-                        
+        return Response({"error": "Insurance record not found"}, status=404)
     except Exception as e:
-        logger.exception("An error occurred during insurance update")
-        return Response({"error": "An error occurred", "details": str(e)}, 
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.exception("Error occurred during insurance update")
+        return Response({"error": "An error occurred", "details": str(e)}, status=500)
+
+
+
+
