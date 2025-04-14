@@ -1,5 +1,5 @@
 from django.db import models
-
+from django.contrib.postgres.fields import JSONField  # PostgreSQL-specific
 #Register
 class Register(models.Model):
     id = models.CharField(max_length=500, primary_key=True)
@@ -8,14 +8,10 @@ class Register(models.Model):
     email = models.EmailField(max_length=500, unique=True)
     password = models.CharField(max_length=500)
     confirmPassword = models.CharField(max_length=500)
-
-
 #Login
 class Login(models.Model):
     email = models.CharField(max_length=150)
     password = models.CharField(max_length=120)
-    
-
 #Insurance
 class Insurance(models.Model):
     patient_uhid = models.CharField(max_length=255, blank=True, null=True)
@@ -45,8 +41,12 @@ class Insurance(models.Model):
     fileSubmissionDate = models.CharField(max_length=255, blank=True, null=True)
     queryDate = models.CharField(max_length=255, blank=True, null=True)
     approvalDate = models.CharField(max_length=255, blank=True, null=True)
+    treatmentType = models.CharField(max_length=255, blank=True, null=True)
+    radiotherapyCycles = models.CharField(max_length=255, blank=True, null=True)
     remarks = models.TextField(blank=True, null=True)  # Longer remarks field
-    
+    pendingAmount = models.CharField(max_length=255, blank=True, null=True)
+    editHistory = models.JSONField(default=list) 
+ 
 
 from django.db import models
 
