@@ -86,11 +86,12 @@ load_dotenv()
 DATABASES = {
     'default': {
         'ENGINE': 'djongo',
-        'NAME': os.getenv("DB_NAME"),
+        'NAME': "Insurane",
         'ENFORCE_SCHEMA': False,
         'CLIENT': {
-            'host': os.getenv("DB_HOST"),
-            'tls': False,  # :white_check_mark: Disable TLS if not required
+            'host': 'mongodb://admin:ifS2nTs6vm@103.205.141.208:27017/',
+            'tls': True,
+            'tlsAllowInvalidCertificates': True,  # Skip cert validation
         }
     }
 }
