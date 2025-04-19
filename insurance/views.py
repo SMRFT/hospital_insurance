@@ -59,8 +59,13 @@ logger = logging.getLogger(__name__)
 def insurance(request):
     try:
 
-        client = MongoClient(os.getenv("DB_HOST"))  # Connect to MongoDB
-        db = client[os.getenv("DB_NAME")]           # Get the database
+        client = MongoClient(
+            CLIENT['host'],
+            tls=CLIENT['tls'],
+            tlsAllowInvalidCertificates=CLIENT['tlsAllowInvalidCertificates']
+        )
+        
+        db = client["Insurance"]          # Get the database
         fs = GridFS(db)                             # Initialize GridFS
 
         if request.method == 'POST':
@@ -127,8 +132,13 @@ def serve_file(request, file_id):
     # MongoDB connection
 
 
-    client = MongoClient(os.getenv("DB_HOST"))  # Connect to MongoDB
-    db = client[os.getenv("DB_NAME")]           # Get the database
+    client = MongoClient(
+        CLIENT['host'],
+        tls=CLIENT['tls'],
+        tlsAllowInvalidCertificates=CLIENT['tlsAllowInvalidCertificates']
+    )
+    
+    db = client["Insurance"]          # Get the database
     fs = GridFS(db)                             # Initialize GridFS                       # Initialize GridFS
     
     try:
@@ -161,8 +171,13 @@ from datetime import datetime
 def submit_daycare(request):
     # Connect to the MongoDB instance
 
-    client = MongoClient(os.getenv("DB_HOST"))  # Connect to MongoDB
-    db = client[os.getenv("DB_NAME")]           # Get the database
+    client = MongoClient(
+        CLIENT['host'],
+        tls=CLIENT['tls'],
+        tlsAllowInvalidCertificates=CLIENT['tlsAllowInvalidCertificates']
+    )
+    
+    db = client["Insurance"]         # Get the database
     fs = GridFS(db)                             # Initialize GridFS
 
     if request.method == 'POST':
