@@ -16,7 +16,7 @@ class Login(models.Model):
 class Insurance(models.Model):
     patient_uhid = models.CharField(max_length=255, blank=True, null=True)
     patient_name = models.CharField(max_length=255, blank=True, null=True)
-    billNumber = models.CharField(max_length=255, primary_key=True)
+    billNumber = models.CharField(max_length=255, blank=True, null=True)
     date = models.CharField(max_length=255, blank=True, null=True)
     companyName = models.CharField(max_length=255, blank=True, null=True)
     specificInsuranceCompany = models.CharField(max_length=255, blank=True, null=True)
@@ -47,9 +47,6 @@ class Insurance(models.Model):
     pendingAmount = models.CharField(max_length=255, blank=True, null=True)
     editHistory = models.JSONField(default=list) 
  
-
-from django.db import models
-
 
 class Daycare(models.Model):
     admissionType = models.JSONField()  # This will store the admission type as JSON
