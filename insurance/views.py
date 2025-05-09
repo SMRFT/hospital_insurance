@@ -244,45 +244,45 @@ from .serializers import InsuranceSerializer
 
 logger = logging.getLogger(__name__)
 
+
+# @permission_classes([IsAuthenticated])
 @api_view(['PUT'])
 @csrf_exempt
-# @permission_classes([IsAuthenticated])
 def insurance_update_combined(request, identifier):
     try:
         logger.info(f"Attempting to update record with identifier: {identifier}")
+        data = request.data.copy()
         
-        # Check if the identifier includes a prefix or not
-        if identifier.upper().startswith('OP'):
-            insurance = Insurance.objects.get(opNumber=identifier)
-        elif identifier.upper().startswith('IP'):
-            insurance = Insurance.objects.get(ipNumber=identifier)
-        else:
-            # Handle case where no prefix is provided (just the number)
+        # Normalize date format if passed
+        update_date = data.get("date")
+        if update_date:
             try:
-                # First try as is (for billNumber)
-                insurance = Insurance.objects.get(billNumber=identifier)
-            except Insurance.DoesNotExist:
-                try:
-                    # Then try with OP prefix
-                    insurance = Insurance.objects.get(opNumber=identifier)
-                except Insurance.DoesNotExist:
-                    try:
-                        # Try just matching the number part for opNumber
-                        opnum_records = Insurance.objects.filter(opNumber__endswith=identifier)
-                        if opnum_records.exists():
-                            insurance = opnum_records.first()
-                        else:
-                            # Try with IP prefix
-                            insurance = Insurance.objects.get(ipNumber=identifier)
-                    except Insurance.DoesNotExist:
-                        # Last try - check if the number part matches without prefix
-                        ipnum_records = Insurance.objects.filter(ipNumber__endswith=identifier)
-                        if ipnum_records.exists():
-                            insurance = ipnum_records.first()
-                        else:
-                            raise Insurance.DoesNotExist(f"No record found with identifier {identifier}")
-        
+                parsed_date = datetime.strptime(update_date, "%Y-%m-%d").date()
+            except ValueError:
+                return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+        else:
+            return Response({"error": "Date is required for update."}, status=400)
+
+        # Perform lookup based on identifier + date
+        insurance = None
+        if identifier.upper().startswith('OP'):
+            insurance = Insurance.objects.filter(opNumber=identifier, date=parsed_date).first()
+        elif identifier.upper().startswith('IP'):
+            insurance = Insurance.objects.filter(ipNumber=identifier, date=parsed_date).first()
+        else:
+            # Try various combinations
+            insurance = Insurance.objects.filter(billNumber=identifier, date=parsed_date).first()
+            if not insurance:
+                insurance = Insurance.objects.filter(opNumber__endswith=identifier, date=parsed_date).first()
+            if not insurance:
+                insurance = Insurance.objects.filter(ipNumber__endswith=identifier, date=parsed_date).first()
+
+        if not insurance:
+            raise Insurance.DoesNotExist(f"No record found with identifier {identifier} and date {update_date}")
+
         logger.info(f"Found record: {insurance.id} - {insurance.patient_name}")
+        
+
         data = request.data.copy()
         
         # Connect to MongoDB GridFS

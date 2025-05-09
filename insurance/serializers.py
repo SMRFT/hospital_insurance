@@ -43,5 +43,6 @@ class InsuranceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Insurance
         fields = '__all__'
+        
 
 
