@@ -81,7 +81,7 @@ logger = logging.getLogger(__name__)
 def insurance(request):
     try:
 
-        mongo_uri = "mongodb://InsuranceDev:ShanmugaInsurance%402025@103.205.141.208:27017/Insurance"
+        mongo_uri = "mongodb://admin:ifS2nTs6vm@103.205.141.208:27017/"
         client = MongoClient(mongo_uri)
         db = client["Insurance"]         
         fs = GridFS(db)                  
@@ -152,7 +152,7 @@ def serve_file(request, file_id):
     # MongoDB connection
 
 
-    mongo_uri = "mongodb://InsuranceDev:ShanmugaInsurance%402025@103.205.141.208:27017/Insurance"
+    mongo_uri = "mongodb://admin:ifS2nTs6vm@103.205.141.208:27017/"
     client = MongoClient(mongo_uri)
     db = client["Insurance"]         
     fs = GridFS(db)                  
@@ -189,7 +189,7 @@ from datetime import datetime
 def submit_daycare(request):
     # Connect to the MongoDB instance
 
-    mongo_uri = "mongodb://InsuranceDev:ShanmugaInsurance%402025@103.205.141.208:27017/Insurance"
+    mongo_uri = "mongodb://admin:ifS2nTs6vm@103.205.141.208:27017/"
     client = MongoClient(mongo_uri)
     db = client["Insurance"]         
     fs = GridFS(db)     
@@ -286,7 +286,7 @@ def insurance_update_combined(request, identifier):
         data = request.data.copy()
         
         # Connect to MongoDB GridFS
-        mongo_uri = "mongodb://InsuranceDev:ShanmugaInsurance%402025@103.205.141.208:27017/Insurance"
+        mongo_uri = "mongodb://admin:ifS2nTs6vm@103.205.141.208:27017/"
         client = MongoClient(mongo_uri)
         db = client["Insurance"]         
         fs = GridFS(db)
@@ -380,7 +380,7 @@ def insurance_update_combined(request, identifier):
 def get_insurance_companies(request):
     try:
         # MongoDB connection
-        mongo_uri = "mongodb://InsuranceDev:ShanmugaInsurance%402025@103.205.141.208:27017/Insurance"
+        mongo_uri = "mongodb://admin:ifS2nTs6vm@103.205.141.208:27017/"
         client = MongoClient(mongo_uri)
         db = client["Insurance"]
         collection = db["insurance_company"]
