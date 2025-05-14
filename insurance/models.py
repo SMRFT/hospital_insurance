@@ -1,7 +1,23 @@
 from django.db import models
-from django.contrib.postgres.fields import JSONField  # PostgreSQL-specific
+
+
+class AuditModel(models.Model):
+    created_by = models.CharField(max_length=100, blank=True, null=True)
+    created_date = models.DateTimeField(auto_now_add=True)
+    lastmodified_by = models.CharField(max_length=100, blank=True, null=True)
+    lastmodified_date = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        if not self.created_by:
+            self.created_by = "system"
+        self.lastmodified_by = self.lastmodified_by or "system"
+        super().save(*args, **kwargs)
+
 #Register
-class Register(models.Model):
+class Register(AuditModel):
     id = models.CharField(max_length=500, primary_key=True)
     name = models.CharField(max_length=500)
     role = models.CharField(max_length=500)
@@ -9,11 +25,11 @@ class Register(models.Model):
     password = models.CharField(max_length=500)
     confirmPassword = models.CharField(max_length=500)
 #Login
-class Login(models.Model):
+class Login(AuditModel):
     email = models.CharField(max_length=150)
     password = models.CharField(max_length=120)
 #Insurance
-class Insurance(models.Model):
+class Insurance(AuditModel):
     patient_uhid = models.CharField(max_length=255, blank=True, null=True)
     patient_name = models.CharField(max_length=255, blank=True, null=True)
     billNumber = models.CharField(max_length=255, blank=True, null=True)
@@ -48,7 +64,7 @@ class Insurance(models.Model):
     editHistory = models.JSONField(default=list) 
  
 
-class Daycare(models.Model):
+class Daycare(AuditModel):
     admissionType = models.JSONField()  # This will store the admission type as JSON
     patientName = models.CharField(max_length=255)
     uhid = models.CharField(max_length=100)
@@ -64,4 +80,4 @@ class Daycare(models.Model):
     claimApproval = models.CharField(max_length=50)
     
     def __str__(self):
-        return self.patient_name
+        return self.patientName

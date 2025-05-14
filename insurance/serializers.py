@@ -35,9 +35,8 @@ class DaycareSerializer(serializers.ModelSerializer):
         model = Daycare
         fields = '__all__'  # Include all fields from the model
         
-from rest_framework import serializers
-from .models import Insurance
 
+from .models import Insurance
 class InsuranceSerializer(serializers.ModelSerializer):
     id = ObjectIdField(read_only=True)
     class Meta:

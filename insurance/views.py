@@ -11,18 +11,29 @@ import certifi
 import os
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import permission_classes
-
+import json
+import logging
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from bson import ObjectId
 from dotenv import load_dotenv
+from django.contrib.auth.hashers import make_password
+from rest_framework_simplejwt.tokens import RefreshToken
+from pymongo import MongoClient
+from datetime import datetime
+from insurance.auth.permissions import SkipPermissionsIfDisabled
+from pyauth.auth import HasRoleAndDataPermission
+#permisiins disabled 
+
 
 load_dotenv()
-
-
-# Login view
-from django.contrib.auth.hashers import make_password
-from .models import Insurance ,Register
-from .serializers import InsuranceSerializer ,RegisterSerializer
+# Register view
+from .models import Insurance ,Register, Daycare
+from .serializers import InsuranceSerializer ,RegisterSerializer, DaycareSerializer
 @api_view(['POST'])
 @csrf_exempt
+@permission_classes([SkipPermissionsIfDisabled, HasRoleAndDataPermission])
 def registration(request):
     if request.method == 'POST':
         serializer = RegisterSerializer(data=request.data)
@@ -33,18 +44,8 @@ def registration(request):
 
 
 # Login view
-from django.contrib.auth.hashers import check_password
-
-from rest_framework_simplejwt.tokens import RefreshToken
-
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
-from django.contrib.auth.hashers import check_password
-from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Register  # Adjust this import based on your actual model path
-
 @api_view(['POST'])
+@permission_classes([SkipPermissionsIfDisabled, HasRoleAndDataPermission])
 def login(request):
     employee_id = request.data.get('id')
     password = request.data.get('password')
@@ -77,7 +78,7 @@ logger = logging.getLogger(__name__)
 
 @api_view(['GET', 'POST'])
 @csrf_exempt
-# @permission_classes([IsAuthenticated])
+@permission_classes([SkipPermissionsIfDisabled, HasRoleAndDataPermission])
 def insurance(request):
     try:
 
@@ -147,16 +148,13 @@ def insurance(request):
 
 
 @api_view(['POST', 'GET'])
-# @permission_classes([IsAuthenticated])
+@permission_classes([SkipPermissionsIfDisabled, HasRoleAndDataPermission])
 def serve_file(request, file_id):
     # MongoDB connection
-
-
     mongo_uri = "mongodb://admin:YSEgnm42789@103.205.141.245:27017/"
     client = MongoClient(mongo_uri)
     db = client["Insurance"]         
     fs = GridFS(db)                  
-
     
     try:
         # Convert the file_id from string to ObjectId
@@ -174,18 +172,8 @@ def serve_file(request, file_id):
         raise Http404(f"File not found: {str(e)}")
     
     
-
-from pymongo import MongoClient
-from gridfs import GridFS
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
-from .models import Daycare
-from .serializers import DaycareSerializer
-from datetime import datetime
-
 @api_view(['POST', 'GET'])
-# @permission_classes([IsAuthenticated])
+@permission_classes([SkipPermissionsIfDisabled, HasRoleAndDataPermission])
 def submit_daycare(request):
     # Connect to the MongoDB instance
 
@@ -227,33 +215,17 @@ def submit_daycare(request):
         serializer = DaycareSerializer(daycare_records, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-import os
-import json
-import logging
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
-from pymongo import MongoClient
-from gridfs import GridFS
-from bson import ObjectId
-from .models import Insurance
-from .serializers import InsuranceSerializer
 
 logger = logging.getLogger(__name__)
-
-
-# @permission_classes([IsAuthenticated])
+@permission_classes([SkipPermissionsIfDisabled, HasRoleAndDataPermission])
 @api_view(['PUT'])
 @csrf_exempt
 def insurance_update_combined(request, identifier):
     try:
         logger.info(f"Attempting to update record with identifier: {identifier}")
         data = request.data.copy()
-        
-        # Normalize date format if passed
+
+        # Normalize date
         update_date = data.get("date")
         if update_date:
             try:
@@ -263,85 +235,95 @@ def insurance_update_combined(request, identifier):
         else:
             return Response({"error": "Date is required for update."}, status=400)
 
-        # Perform lookup based on identifier + date
+        # Identify the insurance object
         insurance = None
-        if identifier.upper().startswith('OP'):
+        if identifier.upper().startswith("OP"):
             insurance = Insurance.objects.filter(opNumber=identifier, date=parsed_date).first()
-        elif identifier.upper().startswith('IP'):
+        elif identifier.upper().startswith("IP"):
             insurance = Insurance.objects.filter(ipNumber=identifier, date=parsed_date).first()
         else:
-            # Try various combinations
-            insurance = Insurance.objects.filter(billNumber=identifier, date=parsed_date).first()
-            if not insurance:
-                insurance = Insurance.objects.filter(opNumber__endswith=identifier, date=parsed_date).first()
-            if not insurance:
-                insurance = Insurance.objects.filter(ipNumber__endswith=identifier, date=parsed_date).first()
+            insurance = (
+                Insurance.objects.filter(billNumber=identifier, date=parsed_date).first()
+                or Insurance.objects.filter(opNumber__endswith=identifier, date=parsed_date).first()
+                or Insurance.objects.filter(ipNumber__endswith=identifier, date=parsed_date).first()
+            )
 
         if not insurance:
-            raise Insurance.DoesNotExist(f"No record found with identifier {identifier} and date {update_date}")
+            raise Insurance.DoesNotExist(f"No record found for identifier {identifier} and date {update_date}")
 
-        logger.info(f"Found record: {insurance.id} - {insurance.patient_name}")
-        
-
-        data = request.data.copy()
-        
         # Connect to MongoDB GridFS
         mongo_uri = "mongodb://admin:YSEgnm42789@103.205.141.245:27017/"
         client = MongoClient(mongo_uri)
-        db = client["Insurance"]         
+        db = client["Insurance"]
         fs = GridFS(db)
-        
-        # Handle file uploads
-        billing_file = request.FILES.get('billingFile')
-        query_file = request.FILES.get('queryUpload')
-        query_response_file = request.FILES.get('queryResponse')
-        
-        # Extract patient info for file naming
-        patient_uhid = data.get('patient_uhid', insurance.patient_uhid).strip()
-        patient_name = data.get('patient_name', insurance.patient_name).strip()
-        
-        # Handle files
-        if billing_file:
-            billing_file_name = f"{patient_uhid}_{patient_name}_billing"
-            billing_file_id = fs.put(billing_file, filename=billing_file_name)
-            data['billingFile'] = str(billing_file_id)
-        elif insurance.billingFile and 'billingFile' not in data:
-            data['billingFile'] = insurance.billingFile
-            
-        if query_file:
-            query_file_name = f"{patient_uhid}_{patient_name}_query"
-            query_file_id = fs.put(query_file, filename=query_file_name)
-            data['queryUpload'] = str(query_file_id)
-        elif insurance.queryUpload and 'queryUpload' not in data:
-            data['queryUpload'] = insurance.queryUpload
-            
-        if query_response_file:
-            query_response_file_name = f"{patient_uhid}_{patient_name}_queryresponse"
-            query_response_file_id = fs.put(query_response_file, filename=query_response_file_name)
-            data['queryResponse'] = str(query_response_file_id)
-        elif insurance.queryResponse and 'queryResponse' not in data:
-            data['queryResponse'] = insurance.queryResponse
-        
-        # Handle numeric field updates
-        # Convert empty strings to None or appropriate default values
-        for field in ['billAmount', 'claimedAmount', 'settledAmount', 'approvalAmount', 'pendingAmount']:
-            if field in data and (data[field] == '' or data[field] is None):
+
+        # File handling
+        patient_uhid = data.get("patient_uhid", insurance.patient_uhid).strip()
+        patient_name = data.get("patient_name", insurance.patient_name).strip()
+
+        for file_field, suffix in [
+            ("billingFile", "billing"),
+            ("queryUpload", "query"),
+            ("queryResponse", "queryresponse"),
+        ]:
+            upload = request.FILES.get(file_field)
+            if upload:
+                file_name = f"{patient_uhid}_{patient_name}_{suffix}"
+                file_id = fs.put(upload, filename=file_name)
+                data[file_field] = str(file_id)
+            elif getattr(insurance, file_field):
+                data[file_field] = getattr(insurance, file_field)
+
+        # Numeric fields cleanup
+        for field in ["billAmount", "claimedAmount", "settledAmount", "approvalAmount", "pendingAmount"]:
+            val = data.get(field)
+            if val in ["", None]:
                 data[field] = None
-            elif field in data:
-                # Try to convert to appropriate numeric type
+            else:
                 try:
-                    data[field] = float(data[field])
+                    data[field] = float(val)
                 except (ValueError, TypeError):
                     data[field] = None
-        
-        # Parse edit history
-        edit_history_json = data.get("editHistory")
-        if edit_history_json:
-            try:
-                edit_history = json.loads(edit_history_json)
-                data['editHistory'] = edit_history  # Store as Python object, not JSON string
-            except json.JSONDecodeError:
-                return Response({"error": "Invalid JSON in editHistory"}, status=400)
+
+                    # Edit history parsing
+                    edit_history_json = data.get("editHistory")
+                    edit_history = []
+                    if edit_history_json:
+                        try:
+                            if isinstance(edit_history_json, str):
+                                # Attempt to parse with safety
+                                clean_json = edit_history_json
+                                if clean_json.startswith('"') and clean_json.endswith('"'):
+                                    clean_json = clean_json[1:-1]
+                                clean_json = clean_json.replace('\\"', '"')
+                                edit_history = json.loads(clean_json)
+                            elif isinstance(edit_history_json, list):
+                                edit_history = edit_history_json
+                        except Exception as e:
+                            logger.error(f"Failed to parse editHistory: {e}")
+                            return Response({"error": "Failed to parse edit history"}, status=400)
+
+                    # Update model fields
+                    for field in [
+                        "billAmount", "claimedAmount", "settledAmount", "approvalAmount", "pendingAmount",
+                        "paymentType", "billingFile", "queryUpload", "queryResponse"
+                    ]:
+                        if field in data:
+                            setattr(insurance, field, data[field])
+
+                    # Update the edit history
+                    if edit_history:
+                        insurance.editHistory = edit_history
+
+                    insurance.save()
+                    return JsonResponse({"message": "Record updated successfully"}, status=200)
+
+                except Insurance.DoesNotExist as e:
+                    return JsonResponse({"error": str(e)}, status=404)
+                except Exception as e:
+                    logger.exception("Unexpected error during update")
+                    return JsonResponse({"error": str(e)}, status=500)
+
         
         # Ensure _id is not in the data to avoid conflicts
         if '_id' in data:
@@ -373,10 +355,10 @@ def insurance_update_combined(request, identifier):
             "error": "An error occurred", 
             "details": str(e)
         }, status=500)
-
+    
 
 @api_view(['GET'])
-# @permission_classes([IsAuthenticated])
+@permission_classes([SkipPermissionsIfDisabled, HasRoleAndDataPermission])
 def get_insurance_companies(request):
     try:
         # MongoDB connection

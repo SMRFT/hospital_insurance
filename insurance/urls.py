@@ -10,5 +10,5 @@ urlpatterns = [
     path('insurance/serve_file/<str:file_id>/', views.serve_file, name="serve_file"),  # Add this line for file serving
     path('submit-daycare/', views.submit_daycare, name='submit_daycare'),
     re_path(r'^insurance/update/(?P<identifier>.+)/$', views.insurance_update_combined, name='insurance_update_combined'),
-    path('insurance/update_pendingamount/<str:bill_number>/', views.insurance_update_combined, name='insurance_update'),
+    re_path(r'^insurance/update_pendingamount/(?P<identifier>.+)/$', views.insurance_update_combined, name='insurance_update'),
 ]
