@@ -1,12 +1,26 @@
+
+
 #!/usr/bin/env python
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
+from dotenv import load_dotenv
 
+load_dotenv()
 
 def main():
     """Run administrative tasks."""
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hospital_insurance.settings')
+
+    environment = os.getenv('ENV_CLASSIFICATION', 'local')
+
+    print(f"Initializing environment: {environment}" )
+
+    if environment == 'prod':
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hospital_insurance.settings-prod')
+    elif environment == 'test':
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hospital_insurance.settings-test')
+    else:
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hospital_insurance.settings')
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:
