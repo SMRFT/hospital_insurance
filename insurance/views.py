@@ -17,7 +17,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from bson import ObjectId
-from dotenv import load_dotenv
+
 from django.contrib.auth.hashers import make_password
 from rest_framework_simplejwt.tokens import RefreshToken
 from pymongo import MongoClient
@@ -26,11 +26,18 @@ from insurance.auth.permissions import SkipPermissionsIfDisabled
 from pyauth.auth import HasRoleAndDataPermission
 #permisiins disabled 
 
-
+from dotenv import load_dotenv
 load_dotenv()
 # Register view
 from .models import Insurance ,Register, Daycare
 from .serializers import InsuranceSerializer ,RegisterSerializer, DaycareSerializer
+
+
+
+mongo_uri = os.getenv("GLOBAL_DB_HOST")
+
+
+
 @api_view(['POST'])
 @csrf_exempt
 @permission_classes([SkipPermissionsIfDisabled, HasRoleAndDataPermission])
@@ -82,7 +89,7 @@ logger = logging.getLogger(__name__)
 def insurance(request):
     try:
 
-        mongo_uri = "mongodb://admin:YSEgnm42789@103.205.141.245:27017/"
+        
         client = MongoClient(mongo_uri)
         db = client["Insurance"]         
         fs = GridFS(db)                  
@@ -151,7 +158,7 @@ def insurance(request):
 @permission_classes([SkipPermissionsIfDisabled, HasRoleAndDataPermission])
 def serve_file(request, file_id):
     # MongoDB connection
-    mongo_uri = "mongodb://admin:YSEgnm42789@103.205.141.245:27017/"
+    
     client = MongoClient(mongo_uri)
     db = client["Insurance"]         
     fs = GridFS(db)                  
@@ -177,7 +184,6 @@ def serve_file(request, file_id):
 def submit_daycare(request):
     # Connect to the MongoDB instance
 
-    mongo_uri = "mongodb://admin:YSEgnm42789@103.205.141.245:27017/"
     client = MongoClient(mongo_uri)
     db = client["Insurance"]         
     fs = GridFS(db)     
@@ -252,7 +258,6 @@ def insurance_update_combined(request, identifier):
             raise Insurance.DoesNotExist(f"No record found for identifier {identifier} and date {update_date}")
 
         # Connect to MongoDB GridFS
-        mongo_uri = "mongodb://admin:YSEgnm42789@103.205.141.245:27017/"
         client = MongoClient(mongo_uri)
         db = client["Insurance"]
         fs = GridFS(db)
@@ -362,7 +367,6 @@ def insurance_update_combined(request, identifier):
 def get_insurance_companies(request):
     try:
         # MongoDB connection
-        mongo_uri = "mongodb://admin:YSEgnm42789@103.205.141.245:27017/"
         client = MongoClient(mongo_uri)
         db = client["Insurance"]
         collection = db["insurance_company"]
