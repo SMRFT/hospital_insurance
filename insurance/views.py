@@ -224,24 +224,24 @@ def submit_daycare(request):
 
 logger = logging.getLogger(__name__)
 @permission_classes([SkipPermissionsIfDisabled, HasRoleAndDataPermission])
-@api_view(['PUT'])
+@api_view(['PUT','GET','POST'])
 @csrf_exempt
 def insurance_update_combined(request, identifier):
     try:
         logger.info(f"Attempting to update record with identifier: {identifier}")
-        data = request.data.copy()
+        incoming_data = request.data.copy()
 
-        # Normalize date
-        update_date = data.get("date")
-        if update_date:
-            try:
-                parsed_date = datetime.strptime(update_date, "%Y-%m-%d").date()
-            except ValueError:
-                return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
-        else:
+        # Parse date
+        update_date = incoming_data.get("date")
+        if not update_date:
             return Response({"error": "Date is required for update."}, status=400)
+        
+        try:
+            parsed_date = datetime.strptime(update_date, "%Y-%m-%d").date()
+        except ValueError:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
 
-        # Identify the insurance object
+        # Find record
         insurance = None
         if identifier.upper().startswith("OP"):
             insurance = Insurance.objects.filter(opNumber=identifier, date=parsed_date).first()
@@ -255,16 +255,24 @@ def insurance_update_combined(request, identifier):
             )
 
         if not insurance:
-            raise Insurance.DoesNotExist(f"No record found for identifier {identifier} and date {update_date}")
+            return Response({"error": f"No record found for identifier {identifier} and date {update_date}"}, status=404)
 
-        # Connect to MongoDB GridFS
+        # Connect to GridFS
         client = MongoClient(mongo_uri)
         db = client["Insurance"]
         fs = GridFS(db)
 
-        # File handling
-        patient_uhid = data.get("patient_uhid", insurance.patient_uhid).strip()
-        patient_name = data.get("patient_name", insurance.patient_name).strip()
+        # Preserve existing fields unless new ones are provided
+        updated_fields = {}
+
+        for field in ["patient_uhid", "patient_name", "paymentType"]:
+            value = incoming_data.get(field)
+            if value is not None:
+                updated_fields[field] = value.strip()
+
+        # Handle file uploads
+        patient_uhid = updated_fields.get("patient_uhid", insurance.patient_uhid)
+        patient_name = updated_fields.get("patient_name", insurance.patient_name)
 
         for file_field, suffix in [
             ("billingFile", "billing"),
@@ -275,91 +283,50 @@ def insurance_update_combined(request, identifier):
             if upload:
                 file_name = f"{patient_uhid}_{patient_name}_{suffix}"
                 file_id = fs.put(upload, filename=file_name)
-                data[file_field] = str(file_id)
-            elif getattr(insurance, file_field):
-                data[file_field] = getattr(insurance, file_field)
-
-        # Numeric fields cleanup
-        for field in ["billAmount", "claimedAmount", "settledAmount", "approvalAmount", "pendingAmount"]:
-            val = data.get(field)
-            if val in ["", None]:
-                data[field] = None
+                updated_fields[file_field] = str(file_id)
             else:
-                try:
-                    data[field] = float(val)
-                except (ValueError, TypeError):
-                    data[field] = None
+                # Retain old file reference if not updated
+                existing_value = getattr(insurance, file_field)
+                if existing_value:
+                    updated_fields[file_field] = existing_value
 
-                    # Edit history parsing
-                    edit_history_json = data.get("editHistory")
-                    edit_history = []
-                    if edit_history_json:
-                        try:
-                            if isinstance(edit_history_json, str):
-                                # Attempt to parse with safety
-                                clean_json = edit_history_json
-                                if clean_json.startswith('"') and clean_json.endswith('"'):
-                                    clean_json = clean_json[1:-1]
-                                clean_json = clean_json.replace('\\"', '"')
-                                edit_history = json.loads(clean_json)
-                            elif isinstance(edit_history_json, list):
-                                edit_history = edit_history_json
-                        except Exception as e:
-                            logger.error(f"Failed to parse editHistory: {e}")
-                            return Response({"error": "Failed to parse edit history"}, status=400)
+        # Handle numeric fields
+        for field in ["billAmount", "claimedAmount", "settledAmount", "approvalAmount", "pendingAmount"]:
+            raw_val = incoming_data.get(field)
+            if raw_val in ["", None]:
+                continue  # skip updating if not provided
+            try:
+                updated_fields[field] = float(raw_val)
+            except (ValueError, TypeError):
+                return Response({"error": f"Invalid numeric value for {field}"}, status=400)
 
-                    # Update model fields
-                    for field in [
-                        "billAmount", "claimedAmount", "settledAmount", "approvalAmount", "pendingAmount",
-                        "paymentType", "billingFile", "queryUpload", "queryResponse"
-                    ]:
-                        if field in data:
-                            setattr(insurance, field, data[field])
+        # Handle edit history
+        edit_history_json = incoming_data.get("editHistory")
+        if edit_history_json:
+            try:
+                if isinstance(edit_history_json, str):
+                    clean_json = edit_history_json.strip('"').replace('\\"', '"')
+                    edit_history = json.loads(clean_json)
+                else:
+                    edit_history = edit_history_json
+                updated_fields["editHistory"] = edit_history
+            except Exception as e:
+                return Response({"error": "Failed to parse edit history"}, status=400)
 
-                    # Update the edit history
-                    if edit_history:
-                        insurance.editHistory = edit_history
+        # Ensure _id is not present
+        updated_fields.pop("_id", None)
 
-                    insurance.save()
-                    return JsonResponse({"message": "Record updated successfully"}, status=200)
-
-                except Insurance.DoesNotExist as e:
-                    return JsonResponse({"error": str(e)}, status=404)
-                except Exception as e:
-                    logger.exception("Unexpected error during update")
-                    return JsonResponse({"error": str(e)}, status=500)
-
-        
-        # Ensure _id is not in the data to avoid conflicts
-        if '_id' in data:
-            del data['_id']
-        
-        # Use the serializer for the update
-        serializer = InsuranceSerializer(insurance, data=data, partial=True)
+        # Serialize and update
+        serializer = InsuranceSerializer(insurance, data=updated_fields, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response({
-                "message": "Insurance updated successfully", 
-                "data": serializer.data
-            }, status=200)
+            return Response({"message": "Insurance updated successfully", "data": serializer.data}, status=200)
         else:
-            return Response({
-                "error": "Invalid data", 
-                "details": serializer.errors
-            }, status=400)
-            
-    except Insurance.DoesNotExist as e:
-        logger.error(f"Record not found for identifier: {identifier}")
-        return Response({
-            "error": f"Insurance record not found with identifier: {identifier}",
-            "details": str(e)
-        }, status=404)
+            return Response({"error": "Invalid data", "details": serializer.errors}, status=400)
+
     except Exception as e:
-        logger.exception(f"Error occurred during insurance update: {str(e)}")
-        return Response({
-            "error": "An error occurred", 
-            "details": str(e)
-        }, status=500)
+        logger.exception("Unexpected error during update")
+        return Response({"error": "An error occurred", "details": str(e)}, status=500)
     
 
 @api_view(['GET'])
