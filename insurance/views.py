@@ -244,13 +244,14 @@ def insurance_update_combined(request, identifier):
         # Identify the insurance object
         insurance = None
         if not insurance:
-            # Create a new Insurance record if not found
+            # Prepare data for new Insurance entry
             data["opNumber"] = identifier if identifier.upper().startswith("OP") else None
             data["ipNumber"] = identifier if identifier.upper().startswith("IP") else None
             data["billNumber"] = (
                 identifier if not (identifier.upper().startswith("OP") or identifier.upper().startswith("IP")) else None
             )
-            data["date"] = parsed_date
+            data["date"] = parsed_date.strftime("%Y-%m-%d")  # 👈 Convert to string
+        
             serializer = InsuranceSerializer(data=data)
             if serializer.is_valid():
                 serializer.save()
@@ -263,6 +264,7 @@ def insurance_update_combined(request, identifier):
                     "error": "Invalid data for new record",
                     "details": serializer.errors
                 }, status=400)
+
 
         if not insurance:
             raise Insurance.DoesNotExist(f"No record found for identifier {identifier} and date {update_date}")
