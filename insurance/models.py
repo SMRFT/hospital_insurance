@@ -23,7 +23,6 @@ class Register(AuditModel):
     role = models.CharField(max_length=500)
     email = models.EmailField(max_length=500, unique=True)
     password = models.CharField(max_length=500)
-    confirmPassword = models.CharField(max_length=500)
 #Login
 class Login(AuditModel):
     email = models.CharField(max_length=150)
