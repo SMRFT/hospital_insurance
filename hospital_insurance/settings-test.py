@@ -75,6 +75,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'hospital_insurance.wsgi.application'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "https://test.shinova.in"
 ]
 
 # Database
