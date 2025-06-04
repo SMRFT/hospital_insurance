@@ -89,7 +89,7 @@ DATABASES = {
         'NAME': "Insurance",
         'ENFORCE_SCHEMA': False,
         'CLIENT': {
-            'host': 'mongodb://admin:YSEgnm42789@103.205.141.245:27017/',
+            'host': 'mongodb://admin:ifS2nTs6vm@103.205.141.208:27017/',
         }
     }
 }
