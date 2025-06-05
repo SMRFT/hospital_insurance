@@ -17,7 +17,6 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from bson import ObjectId
-
 from django.contrib.auth.hashers import make_password
 from rest_framework_simplejwt.tokens import RefreshToken
 from pymongo import MongoClient
@@ -25,18 +24,13 @@ from datetime import datetime
 from insurance.auth.permissions import SkipPermissionsIfDisabled
 from pyauth.auth import HasRoleAndDataPermission
 #permisiins disabled 
-
 from dotenv import load_dotenv
 load_dotenv()
 # Register view
 from .models import Insurance ,Register, Daycare
 from .serializers import InsuranceSerializer ,RegisterSerializer, DaycareSerializer
 
-
-
 mongo_uri = os.getenv("GLOBAL_DB_HOST")
-
-
 
 @api_view(['POST'])
 @csrf_exempt
@@ -82,6 +76,8 @@ def login(request):
   
 # Insurance view
 import logging
+from datetime import datetime
+from django.db.models import Q
 logger = logging.getLogger(__name__)
 
 @api_view(['GET', 'POST'])
@@ -89,8 +85,6 @@ logger = logging.getLogger(__name__)
 @permission_classes([SkipPermissionsIfDisabled, HasRoleAndDataPermission])
 def insurance(request):
     try:
-
-        
         client = MongoClient(mongo_uri)
         db = client["Insurance"]         
         fs = GridFS(db)                  
@@ -146,8 +140,65 @@ def insurance(request):
             return Response({"error": "Invalid data", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
         elif request.method == 'GET':
+            # Start with all insurance records
             insurances = Insurance.objects.all()
+            
+            # Apply company filter
+            company_name = request.GET.get('companyName')
+            if company_name:
+                insurances = insurances.filter(companyName=company_name)
+            
+            # Apply date range filter
+            from_date = request.GET.get('from_date')
+            to_date = request.GET.get('to_date')
+            
+            if from_date:
+                try:
+                    from_date_obj = datetime.strptime(from_date, '%Y-%m-%d').date()
+                    insurances = insurances.filter(date__gte=from_date_obj)
+                except ValueError:
+                    logger.warning(f"Invalid from_date format: {from_date}")
+            
+            if to_date:
+                try:
+                    to_date_obj = datetime.strptime(to_date, '%Y-%m-%d').date()
+                    insurances = insurances.filter(date__lte=to_date_obj)
+                except ValueError:
+                    logger.warning(f"Invalid to_date format: {to_date}")
+            
+            # Apply search filter
+            search_field = request.GET.get('search_field')
+            search_value = request.GET.get('search_value')
+            
+            if search_field and search_value:
+                search_filter = Q()
+                
+                if search_field == 'billNumber':
+                    search_filter = Q(billNumber__icontains=search_value)
+                elif search_field == 'ipNumber':
+                    search_filter = Q(ipNumber__icontains=search_value)
+                elif search_field == 'opNumber':
+                    search_filter = Q(opNumber__icontains=search_value)
+                elif search_field == 'patient_name':
+                    search_filter = Q(patient_name__icontains=search_value)
+                elif search_field == 'dateOfDischarge':
+                    try:
+                        discharge_date_obj = datetime.strptime(search_value, '%Y-%m-%d').date()
+                        search_filter = Q(dateOfDischarge=discharge_date_obj)
+                    except ValueError:
+                        logger.warning(f"Invalid dateOfDischarge format: {search_value}")
+                        # If date format is invalid, return empty queryset
+                        insurances = Insurance.objects.none()
+                
+                if search_filter:
+                    insurances = insurances.filter(search_filter)
+            
+            # Order by date descending (most recent first)
+            insurances = insurances.order_by('-date', '-id')
+            
             serializer = InsuranceSerializer(insurances, many=True)
+            
+            logger.info(f"Filtered insurance records: {len(serializer.data)} results")
             return Response(serializer.data, status=status.HTTP_200_OK)
 
     except Exception as e:
