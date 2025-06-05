@@ -12,14 +12,24 @@ class ObjectIdField(serializers.Field):
 #Register Serializer
 from .models import Register,Daycare
 class RegisterSerializer(serializers.ModelSerializer):
+    confirmPassword = serializers.CharField(write_only=True)
+
     class Meta:
         model = Register
-        fields = '__all__'
+        fields = ['email', 'password', 'confirmPassword', 'name','id','role']  # list your actual fields
+        extra_kwargs = {
+            'password': {'write_only': True}
+        }
 
     def validate(self, data):
         if data['password'] != data['confirmPassword']:
             raise serializers.ValidationError("Passwords do not match.")
         return data
+
+    def create(self, validated_data):
+        validated_data.pop('confirmPassword')  # Remove it before creating the object
+        return super().create(validated_data)
+
     
 #Login Serializer 
 from .models import Login

@@ -23,7 +23,6 @@ class Register(AuditModel):
     role = models.CharField(max_length=500)
     email = models.EmailField(max_length=500, unique=True)
     password = models.CharField(max_length=500)
-    confirmPassword = models.CharField(max_length=500)
 #Login
 class Login(AuditModel):
     email = models.CharField(max_length=150)
@@ -71,13 +70,13 @@ class Daycare(AuditModel):
     doctorName = models.CharField(max_length=255)
     companyName = models.CharField(max_length=255, blank=True, null=True)
     specificInsuranceCompany = models.CharField(max_length=255, blank=True, null=True)
-    billType = models.CharField(max_length=50)
-    claimId = models.CharField(max_length=100)
-    opFile = models.CharField(max_length=255, blank=True, null=True) 
-    submissionDate = models.DateField()
-    claimDetails = models.CharField(max_length=50)
-    billAmount = models.CharField(max_length=50)
-    claimApproval = models.CharField(max_length=50)
+    billType = models.CharField(max_length=255, blank=True, null=True)
+    claimId = models.CharField(max_length=255, blank=True, null=True)
+    opFile = models.CharField(max_length=255, blank=True, null=True)
+    submissionDate = models.CharField(max_length=150)
+    claimDetails =  models.CharField(max_length=255, blank=True, null=True)
+    billAmount = models.CharField(max_length=255, blank=True, null=True)
+    claimApproval = models.CharField(max_length=255, blank=True, null=True)
     
     def __str__(self):
         return self.patientName
