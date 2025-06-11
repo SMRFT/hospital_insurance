@@ -11,4 +11,5 @@ urlpatterns = [
     path('submit-daycare/', views.submit_daycare, name='submit_daycare'),
     re_path(r'^insurance/update/(?P<identifier>.+)/$', views.insurance_update_combined, name='insurance_update_combined'),
     re_path(r'^insurance/update_pendingamount/(?P<identifier>.+)/$', views.insurance_update_combined, name='insurance_update'),
+    path('other_records/', views.other_record_view, name='other-records'),
 ]

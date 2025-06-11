@@ -80,3 +80,17 @@ class Daycare(AuditModel):
     
     def __str__(self):
         return self.patientName
+    
+
+class OtherRecord(AuditModel):
+    date = models.CharField(max_length=255, blank=True, null=True)
+    patient_name = models.CharField(max_length=200)
+    patient_uhid = models.CharField(max_length=50, unique=True)
+    mobile_number = models.CharField(max_length=255)
+    company_name = models.CharField(max_length=200, blank=True, null=True)
+    treatment = models.CharField(max_length=500, blank=True, null=True)
+    amount = models.CharField(max_length=255)
+    refund = models.CharField(max_length=255)
+
+    def __str__(self):
+        return f"{self.patient_name} - {self.patient_uhid}"

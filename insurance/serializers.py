@@ -52,6 +52,14 @@ class InsuranceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Insurance
         fields = '__all__'
+
+
+from .models import OtherRecord
+class OtherRecordSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    class Meta:
+        model = OtherRecord
+        fields = '__all__'
         
 
 
