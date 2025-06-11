@@ -15,6 +15,7 @@ import json
 import logging
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods
 from bson import ObjectId
 from django.contrib.auth.hashers import make_password
@@ -27,8 +28,8 @@ from pyauth.auth import HasRoleAndDataPermission
 from dotenv import load_dotenv
 load_dotenv()
 # Register view
-from .models import Insurance ,Register, Daycare
-from .serializers import InsuranceSerializer ,RegisterSerializer, DaycareSerializer
+from .models import Insurance ,Register, Daycare, OtherRecord
+from .serializers import InsuranceSerializer ,RegisterSerializer, DaycareSerializer , OtherRecordSerializer
 
 mongo_uri = os.getenv("GLOBAL_DB_HOST")
 
@@ -430,3 +431,26 @@ def get_insurance_companies(request):
 
     except Exception as e:
         return JsonResponse({"error": "Failed to fetch insurance companies", "details": str(e)}, status=500)
+
+
+@api_view(['GET', 'POST'])
+def other_record_view(request):
+    if request.method == 'GET':
+        from_date = request.GET.get('from_date')
+        to_date = request.GET.get('to_date')
+        records = OtherRecord.objects.all()
+
+        if from_date:
+            records = records.filter(date__gte=parse_date(from_date))
+        if to_date:
+            records = records.filter(date__lte=parse_date(to_date))
+
+        serializer = OtherRecordSerializer(records, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    elif request.method == 'POST':
+        serializer = OtherRecordSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

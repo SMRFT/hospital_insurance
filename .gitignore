@@ -1,4 +1,8 @@
-/.DS_Store
+# macOS
+.DS_Store
 
-.env
+# Python virtual environments
 venv/
+
+# Environment variables
+.env
