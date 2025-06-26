@@ -16,6 +16,7 @@ class AuditModel(models.Model):
         self.lastmodified_by = self.lastmodified_by or "system"
         super().save(*args, **kwargs)
 
+
 #Register
 class Register(AuditModel):
     id = models.CharField(max_length=500, primary_key=True)
@@ -23,10 +24,14 @@ class Register(AuditModel):
     role = models.CharField(max_length=500)
     email = models.EmailField(max_length=500, unique=True)
     password = models.CharField(max_length=500)
+
+
 #Login
 class Login(AuditModel):
     email = models.CharField(max_length=150)
     password = models.CharField(max_length=120)
+
+
 #Insurance
 class Insurance(AuditModel):
     patient_uhid = models.CharField(max_length=255, blank=True, null=True)
@@ -36,6 +41,7 @@ class Insurance(AuditModel):
     companyName = models.CharField(max_length=255, blank=True, null=True)
     specificInsuranceCompany = models.CharField(max_length=255, blank=True, null=True)
     dateOfDischarge = models.CharField(max_length=255, blank=True, null=True)
+    claimId = models.CharField(max_length=255, blank=True, null=True)
     billingFile = models.CharField(max_length=255, blank=True, null=True)
     queryUpload = models.CharField(max_length=255, blank=True, null=True)
     queryResponse = models.CharField(max_length=255, blank=True, null=True)
@@ -83,14 +89,21 @@ class Daycare(AuditModel):
     
 
 class OtherRecord(AuditModel):
-    date = models.CharField(max_length=255, blank=True, null=True)
+    date = models.DateField(blank=True, null=True)
     patient_name = models.CharField(max_length=200)
-    patient_uhid = models.CharField(max_length=50, unique=True)
-    mobile_number = models.CharField(max_length=255)
+    patient_uhid = models.CharField(max_length=50)
+    mobile_number = models.CharField(max_length=15)
     company_name = models.CharField(max_length=200, blank=True, null=True)
     treatment = models.CharField(max_length=500, blank=True, null=True)
-    amount = models.CharField(max_length=255)
-    refund = models.CharField(max_length=255)
-
+    refund = models.CharField(max_length=500, blank=True, null=True)
+    payment_details = models.JSONField(default=list)
+    
     def __str__(self):
         return f"{self.patient_name} - {self.patient_uhid}"
+    
+    @property
+    def total_amount(self):
+        """Calculate total amount from payment details"""
+        if not self.payment_details:
+            return 0
+        return sum(float(payment.get('amount', 0)) for payment in self.payment_details)

@@ -54,12 +54,77 @@ class InsuranceSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-from .models import OtherRecord
-class OtherRecordSerializer(serializers.ModelSerializer):
+from rest_framework import serializers
+from bson import ObjectId
+from datetime import date, datetime
+
+class ObjectIdField(serializers.Field):
+    """Custom field to handle MongoDB ObjectId"""
+    
+    def to_representation(self, value):
+        if isinstance(value, ObjectId):
+            return {'$oid': str(value)}
+        return value
+    
+    def to_internal_value(self, data):
+        if isinstance(data, dict) and '$oid' in data:
+            return ObjectId(data['$oid'])
+        elif isinstance(data, str):
+            return ObjectId(data)
+        return data
+
+class OtherRecordSerializer(serializers.Serializer):
     id = ObjectIdField(read_only=True)
-    class Meta:
-        model = OtherRecord
-        fields = '__all__'
+    date = serializers.CharField(required=False, allow_blank=True, allow_null=True)  # Changed to CharField to handle string dates
+    patient_name = serializers.CharField(max_length=200)
+    patient_uhid = serializers.CharField(max_length=50)
+    mobile_number = serializers.CharField(max_length=15)
+    company_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    treatment = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    refund = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    payment_details = serializers.ListField(default=list)
+    total_amount = serializers.SerializerMethodField()
+    
+    def get_total_amount(self, obj):
+        """Calculate total amount from payment details"""
+        payment_details = obj.get('payment_details', [])
+        if not payment_details:
+            return 0
+        return sum(float(payment.get('amount', 0)) for payment in payment_details)
+    
+    def validate_date(self, value):
+        """Validate and convert date field"""
+        if not value:
+            return None
         
-
-
+        # If it's already a string, return as is
+        if isinstance(value, str):
+            return value
+        
+        # If it's a date object, convert to string
+        if isinstance(value, (date, datetime)):
+            return value.isoformat()
+        
+        return value
+    
+    def validate_payment_details(self, value):
+        """Validate payment details structure"""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Payment details must be a list")
+        
+        for payment in value:
+            if not isinstance(payment, dict):
+                raise serializers.ValidationError("Each payment entry must be a dictionary")
+            
+            required_fields = ['amount', 'payment_method', 'date']
+            for field in required_fields:
+                if field not in payment:
+                    raise serializers.ValidationError(f"Payment entry missing required field: {field}")
+            
+            # Validate amount
+            try:
+                float(payment['amount'])
+            except (ValueError, TypeError):
+                raise serializers.ValidationError("Payment amount must be a valid number")
+        
+        return value
