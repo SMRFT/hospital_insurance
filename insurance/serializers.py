@@ -107,24 +107,3 @@ class OtherRecordSerializer(serializers.Serializer):
         
         return value
     
-    def validate_payment_details(self, value):
-        """Validate payment details structure"""
-        if not isinstance(value, list):
-            raise serializers.ValidationError("Payment details must be a list")
-        
-        for payment in value:
-            if not isinstance(payment, dict):
-                raise serializers.ValidationError("Each payment entry must be a dictionary")
-            
-            required_fields = ['amount', 'payment_method', 'date']
-            for field in required_fields:
-                if field not in payment:
-                    raise serializers.ValidationError(f"Payment entry missing required field: {field}")
-            
-            # Validate amount
-            try:
-                float(payment['amount'])
-            except (ValueError, TypeError):
-                raise serializers.ValidationError("Payment amount must be a valid number")
-        
-        return value

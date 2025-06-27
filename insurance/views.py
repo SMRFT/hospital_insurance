@@ -506,6 +506,65 @@ def convert_dates_to_strings(data):
     else:
         return data
 
+@api_view(['GET'])
+def other_record_report_view(request):
+    """
+    Get flattened report data where each payment entry becomes a separate row
+    Filters by individual payment dates only
+    """
+    try:
+        client = MongoClient(mongo_uri)
+        db = client["Insurance"]
+        collection = db["insurance_otherrecord"]
+        
+        from_date = request.GET.get('from_date')
+        to_date = request.GET.get('to_date')
+        
+        # Get all records
+        records = list(collection.find({}))
+        flattened_data = []
+        
+        for record in records:
+            # Only process records that have payment_details
+            if record.get('payment_details'):
+                for payment in record['payment_details']:
+                    payment_date = payment.get('date', '')
+                    
+                    # Skip if no payment date
+                    if not payment_date:
+                        continue
+                    
+                    # Apply date filtering
+                    if from_date and payment_date < from_date:
+                        continue
+                    if to_date and payment_date > to_date:
+                        continue
+                    
+                    # Add to results - each payment becomes one row
+                    flattened_data.append({
+                        'id': str(record['_id']),
+                        'date': payment_date,
+                        'patient_name': record.get('patient_name', ''),
+                        'patient_uhid': record.get('patient_uhid', ''),
+                        'mobile_number': record.get('mobile_number', ''),
+                        'company_name': record.get('company_name', ''),
+                        'treatment': record.get('treatment', ''),
+                        'amount': payment.get('amount', 0),
+                        'payment_method': payment.get('payment_method', ''),
+                        'refund': record.get('refund', 0)
+                    })
+        
+        # Sort by date
+        flattened_data.sort(key=lambda x: x['date'])
+        
+        return Response(flattened_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if 'client' in locals():
+            client.close()
+
 @api_view(['GET', 'POST', 'PUT'])
 def other_record_view(request):
     try:
@@ -517,41 +576,53 @@ def other_record_view(request):
             from_date = request.GET.get('from_date')
             to_date = request.GET.get('to_date')
             
-            # Build query
-            query = {}
-            if from_date:
-                query['date'] = {'$gte': from_date}
-            if to_date:
-                if 'date' in query:
-                    query['date']['$lte'] = to_date
-                else:
-                    query['date'] = {'$lte': to_date}
+            # Get all records
+            records = list(collection.find({}))
+            processed_records = []
             
-            records = list(collection.find(query))
+            for record in records:
+                # Only process records that have payment_details
+                if record.get('payment_details'):
+                    # Filter payment details by date
+                    filtered_payments = []
+                    for payment in record['payment_details']:
+                        payment_date = payment.get('date', '')
+                        
+                        # Skip if no payment date
+                        if not payment_date:
+                            continue
+                        
+                        # Apply date filtering
+                        if from_date and payment_date < from_date:
+                            continue
+                        if to_date and payment_date > to_date:
+                            continue
+                        
+                        filtered_payments.append(payment)
+                    
+                    # Only include record if it has matching payments
+                    if filtered_payments:
+                        record_copy = record.copy()
+                        record_copy['payment_details'] = filtered_payments
+                        processed_records.append(record_copy)
             
             # Convert ObjectId to proper format for serialization
-            for record in records:
+            for record in processed_records:
                 record['id'] = record['_id']
                 del record['_id']
             
-            serializer = OtherRecordSerializer(records, many=True)
+            serializer = OtherRecordSerializer(processed_records, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         elif request.method == 'POST':
             serializer = OtherRecordSerializer(data=request.data)
             if serializer.is_valid():
-                # Add timestamps and convert dates
                 validated_data = serializer.validated_data
                 validated_data['created_at'] = datetime.now()
                 validated_data['updated_at'] = datetime.now()
-                
-                # Convert date objects to strings for MongoDB
                 validated_data = convert_dates_to_strings(validated_data)
                 
-                # Insert new record
                 result = collection.insert_one(validated_data)
-                
-                # Return the created record
                 created_record = collection.find_one({'_id': result.inserted_id})
                 created_record['id'] = created_record['_id']
                 del created_record['_id']
@@ -566,7 +637,6 @@ def other_record_view(request):
             if not record_id:
                 return Response({'error': 'ID is required for update'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Handle different ID formats
             try:
                 if isinstance(record_id, dict) and '$oid' in record_id:
                     object_id = ObjectId(record_id['$oid'])
@@ -577,15 +647,11 @@ def other_record_view(request):
             except Exception as e:
                 return Response({'error': f'Invalid ID format: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Find existing record
             record = collection.find_one({"_id": object_id})
             if not record:
                 return Response({'error': 'Record not found'}, status=status.HTTP_404_NOT_FOUND)
 
-            # Prepare update data
             update_data = {}
-            
-            # Update basic fields if provided
             basic_fields = ['date', 'patient_name', 'patient_uhid', 'mobile_number', 
                           'company_name', 'treatment', 'refund']
             
@@ -593,26 +659,19 @@ def other_record_view(request):
                 if field in request.data:
                     update_data[field] = request.data[field]
 
-            # Handle payment_details - append new payments to existing ones
             new_payments = request.data.get("payment_details", [])
             if new_payments:
-                # Validate new payments
                 serializer = OtherRecordSerializer(data={'payment_details': new_payments}, partial=True)
                 if not serializer.is_valid():
                     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
                 
-                # Get existing payment details or initialize empty list
                 existing_payments = record.get('payment_details', [])
-                
-                # Combine existing and new payments
                 combined_payments = existing_payments + new_payments
                 update_data['payment_details'] = combined_payments
 
-            # Add updated timestamp and convert dates
             update_data['updated_at'] = datetime.now()
             update_data = convert_dates_to_strings(update_data)
 
-            # Update the record
             if update_data:
                 update_result = collection.update_one(
                     {"_id": object_id},
@@ -620,7 +679,6 @@ def other_record_view(request):
                 )
                 
                 if update_result.modified_count > 0:
-                    # Return updated record
                     updated_record = collection.find_one({"_id": object_id})
                     updated_record['id'] = updated_record['_id']
                     del updated_record['_id']
@@ -634,83 +692,6 @@ def other_record_view(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    finally:
-        if 'client' in locals():
-            client.close()
-
-@api_view(['GET'])
-def other_record_report_view(request):
-    """
-    Get flattened report data where each payment entry becomes a separate row
-    """
-    try:
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
-        collection = db["insurance_otherrecord"]
-        
-        from_date = request.GET.get('from_date')
-        to_date = request.GET.get('to_date')
-        
-        # Build query for date filtering
-        query = {}
-        if from_date or to_date:
-            date_query = {}
-            if from_date:
-                date_query['$gte'] = from_date
-            if to_date:
-                date_query['$lte'] = to_date
-            query['date'] = date_query
-        
-        records = list(collection.find(query))
-        flattened_data = []
-        
-        for record in records:
-            if record.get('payment_details'):
-                # Create a row for each payment entry
-                for payment in record['payment_details']:
-                    # Filter by payment date if date filters are provided
-                    payment_date = payment.get('date', '')
-                    
-                    # Apply date filtering on payment dates
-                    if from_date and payment_date and payment_date < from_date:
-                        continue
-                    if to_date and payment_date and payment_date > to_date:
-                        continue
-                    
-                    flattened_data.append({
-                        'id': str(record['_id']),
-                        'date': payment.get('date', ''),  # Use payment date
-                        'patient_name': record.get('patient_name', ''),
-                        'patient_uhid': record.get('patient_uhid', ''),
-                        'mobile_number': record.get('mobile_number', ''),
-                        'company_name': record.get('company_name', ''),
-                        'treatment': record.get('treatment', ''),
-                        'amount': payment.get('amount', 0),
-                        'payment_method': payment.get('payment_method', ''),
-                        'refund': record.get('refund', 0)
-                    })
-            else:
-                # If no payment details, show record with empty payment info
-                flattened_data.append({
-                    'id': str(record['_id']),
-                    'date': record.get('date', ''),
-                    'patient_name': record.get('patient_name', ''),
-                    'patient_uhid': record.get('patient_uhid', ''),
-                    'mobile_number': record.get('mobile_number', ''),
-                    'company_name': record.get('company_name', ''),
-                    'treatment': record.get('treatment', ''),
-                    'amount': 0,
-                    'payment_method': '',
-                    'refund': record.get('refund', 0)
-                })
-        
-        # Sort by date
-        flattened_data.sort(key=lambda x: x['date'] or '9999-12-31')
-        
-        return Response(flattened_data, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     finally:
         if 'client' in locals():
             client.close()
