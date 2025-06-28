@@ -10,7 +10,7 @@ class ObjectIdField(serializers.Field):
         return ObjectId(data)
 
 #Register Serializer
-from .models import Register,Daycare
+from .models import Register,Daycare,OtherRecord
 class RegisterSerializer(serializers.ModelSerializer):
     confirmPassword = serializers.CharField(write_only=True)
 
@@ -107,3 +107,7 @@ class OtherRecordSerializer(serializers.Serializer):
         
         return value
     
+
+    
+
+
