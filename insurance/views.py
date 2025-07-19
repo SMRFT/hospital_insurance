@@ -9,7 +9,7 @@ from gridfs import GridFS
 from bson.objectid import ObjectId
 import certifi
 import mimetypes
-# import magic
+import magic
 import os
 from rest_framework.decorators import permission_classes
 import json
@@ -213,35 +213,35 @@ def check_patient_exists(request):
     return Response({"exists": exists})
 
 
-# @api_view(['GET'])
+@api_view(['GET'])
 # @permission_classes([ HasRolePermission])
-# def serve_file(request, file_id):
-#     client = MongoClient(mongo_uri)
-#     db = client["Insurance"]
-#     fs = GridFS(db)
+def serve_file(request, file_id):
+    client = MongoClient(mongo_uri)
+    db = client["Insurance"]
+    fs = GridFS(db)
 
-#     try:
-#         file_id = ObjectId(file_id)
-#         file = fs.get(file_id)
+    try:
+        file_id = ObjectId(file_id)
+        file = fs.get(file_id)
 
-#         # Step 1: Try to get MIME type from filename
-#         content_type, _ = mimetypes.guess_type(file.filename)
+        # Step 1: Try to get MIME type from filename
+        content_type, _ = mimetypes.guess_type(file.filename)
 
-#         # Step 2: Fallback using magic (binary detection)
-#         if not content_type:
-#             mime = magic.Magic(mime=True)
-#             content_type = mime.from_buffer(file.read(2048))
-#             file.seek(0)
+        # Step 2: Fallback using magic (binary detection)
+        if not content_type:
+            mime = magic.Magic(mime=True)
+            content_type = mime.from_buffer(file.read(2048))
+            file.seek(0)
 
-#         response = HttpResponse(file.read(), content_type=content_type)
+        response = HttpResponse(file.read(), content_type=content_type)
 
-#         # View inline (NOT as download)
-#         response['Content-Disposition'] = f'inline; filename="{file.filename}"'
+        # View inline (NOT as download)
+        response['Content-Disposition'] = f'inline; filename="{file.filename}"'
 
-#         return response
+        return response
 
-#     except Exception as e:
-#         raise Http404(f"File not found: {str(e)}")
+    except Exception as e:
+        raise Http404(f"File not found: {str(e)}")
     
     
 @api_view(['POST', 'GET'])
