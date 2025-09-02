@@ -168,7 +168,6 @@ from gridfs import GridFS
 import mimetypes
 
 @api_view(['GET'])
-# @permission_classes([HasRolePermission])
 def serve_file(request, file_id):
     client = MongoClient(mongo_uri)
     db = client["Insurance"]
@@ -409,7 +408,7 @@ def convert_dates_to_strings(data):
         return data
 
 @api_view(['GET'])
-# @permission_classes([ HasRolePermission])
+@permission_classes([ HasRolePermission])
 def other_record_report_view(request):
     """
     Get flattened report data where each payment entry becomes a separate row
@@ -470,7 +469,7 @@ def other_record_report_view(request):
 
 
 @api_view(['GET', 'POST', 'PUT'])
-# @permission_classes([HasRolePermission])
+@permission_classes([HasRolePermission])
 def other_record_view(request):
     try:
         client = MongoClient(mongo_uri)
