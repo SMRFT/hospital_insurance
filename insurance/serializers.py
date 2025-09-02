@@ -22,11 +22,20 @@ class DaycareSerializer(serializers.ModelSerializer):
 
 #Insurance Serializer
 from .models import Insurance
+from rest_framework import serializers
+
 class InsuranceSerializer(serializers.ModelSerializer):
-    id = ObjectIdField(read_only=True)
     class Meta:
         model = Insurance
-        fields = '__all__'
+        fields = "__all__"
+
+    def validate_billingFile(self, value):
+        if isinstance(value, str):  # GridFS ID already stored
+            return value
+        return value
+
+
+
 
 
 class OtherRecordSerializer(serializers.Serializer):

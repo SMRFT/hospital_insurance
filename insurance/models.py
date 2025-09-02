@@ -1,6 +1,7 @@
 from django.db import models
 
 
+# models.py
 class AuditModel(models.Model):
     created_by = models.CharField(max_length=100, blank=True, null=True)
     created_date = models.DateTimeField(auto_now_add=True)
@@ -17,7 +18,6 @@ class AuditModel(models.Model):
         super().save(*args, **kwargs)
 
 
-#Insurance
 class Insurance(AuditModel):
     patient_uhid = models.CharField(max_length=255, blank=True, null=True)
     patient_name = models.CharField(max_length=255, blank=True, null=True)
@@ -49,9 +49,10 @@ class Insurance(AuditModel):
     approvalDate = models.CharField(max_length=255, blank=True, null=True)
     treatmentType = models.CharField(max_length=255, blank=True, null=True)
     radiotherapyCycles = models.CharField(max_length=255, blank=True, null=True)
-    remarks = models.TextField(blank=True, null=True)  # Longer remarks field
+    remarks = models.TextField(blank=True, null=True)
     pendingAmount = models.CharField(max_length=255, blank=True, null=True)
-    editHistory = models.JSONField(default=list) 
+    editHistory = models.JSONField(default=list)
+
  
 
 #Daycare
