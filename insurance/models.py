@@ -53,7 +53,6 @@ class Insurance(AuditModel):
     pendingAmount = models.CharField(max_length=255, blank=True, null=True)
     editHistory = models.JSONField(default=list)
 
- 
 
 #Daycare
 class Daycare(AuditModel):
@@ -85,10 +84,14 @@ class OtherRecord(AuditModel):
     treatment = models.CharField(max_length=500, blank=True, null=True)
     refund = models.CharField(max_length=500, blank=True, null=True)
     payment_details = models.JSONField(default=list)
-    
+    status = models.CharField(max_length=20, default='Pending')
+    ip_op_type = models.CharField(max_length=2, choices=[('IP', 'IP'), ('OP', 'OP')], blank=True, null=True)
+    doctor_name = models.CharField(max_length=200, blank=True, null=True)
+    has_refund = models.BooleanField(default=False)
+
     def __str__(self):
         return f"{self.patient_name} - {self.patient_uhid}"
-    
+
     @property
     def total_amount(self):
         """Calculate total amount from payment details"""

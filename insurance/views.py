@@ -23,7 +23,7 @@ from django.contrib.auth.hashers import make_password
 from rest_framework_simplejwt.tokens import RefreshToken
 from pymongo import MongoClient
 from datetime import datetime
-from pyauth.auth import HasRolePermission 
+from pyauth.auth import HasRolePermission , HasRoleAndDataPermission
 from dotenv import load_dotenv
 import logging
 from datetime import datetime
@@ -40,7 +40,7 @@ mongo_uri = os.getenv("GLOBAL_DB_HOST")
 # views.py
 @api_view(['GET', 'POST'])
 @csrf_exempt
-@permission_classes([HasRolePermission])
+@permission_classes([HasRoleAndDataPermission])
 def insurance(request):
     try:
         client = MongoClient(mongo_uri)
@@ -168,6 +168,8 @@ from gridfs import GridFS
 import mimetypes
 
 @api_view(['GET'])
+@csrf_exempt
+@permission_classes([HasRoleAndDataPermission])
 def serve_file(request, file_id):
     client = MongoClient(mongo_uri)
     db = client["Insurance"]
@@ -201,7 +203,8 @@ def serve_file(request, file_id):
     
     
 @api_view(['POST', 'GET'])
-@permission_classes([ HasRolePermission])
+@csrf_exempt
+@permission_classes([HasRoleAndDataPermission])
 def submit_daycare(request):
     # Connect to the MongoDB instance
 
@@ -246,7 +249,7 @@ def submit_daycare(request):
 
 @api_view(['PUT'])
 @csrf_exempt
-@permission_classes([HasRolePermission])
+@permission_classes([HasRoleAndDataPermission])
 def insurance_update_combined(request, identifier):
     try:
         logger.info(f"Attempting to update record with identifier: {identifier}")
@@ -376,7 +379,8 @@ def insurance_update_combined(request, identifier):
     
 
 @api_view(['GET'])
-@permission_classes([ HasRolePermission])
+@csrf_exempt
+@permission_classes([HasRoleAndDataPermission])
 def get_insurance_companies(request):
     try:
         # MongoDB connection
@@ -393,90 +397,35 @@ def get_insurance_companies(request):
         return JsonResponse({"error": "Failed to fetch insurance companies", "details": str(e)}, status=500)
 
 
-from datetime import datetime, date
 def convert_dates_to_strings(data):
     """Convert datetime.date objects to strings for MongoDB compatibility"""
+    from datetime import date as date_type
     if isinstance(data, dict):
         return {key: convert_dates_to_strings(value) for key, value in data.items()}
     elif isinstance(data, list):
         return [convert_dates_to_strings(item) for item in data]
-    elif isinstance(data, date):
-        return data.isoformat()  # Convert date to YYYY-MM-DD string
+    elif isinstance(data, date_type):
+        return data.isoformat()
     elif isinstance(data, datetime):
-        return data.isoformat()  # Convert datetime to ISO string
+        return data.isoformat()
     else:
         return data
 
-@api_view(['GET'])
-@permission_classes([ HasRolePermission])
-def other_record_report_view(request):
-    """
-    Get flattened report data where each payment entry becomes a separate row
-    Filters by individual payment dates only
-    """
-    try:
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
-        collection = db["insurance_otherrecord"]
-        
-        from_date = request.GET.get('from_date')
-        to_date = request.GET.get('to_date')
-        
-        # Get all records
-        records = list(collection.find({}))
-        flattened_data = []
-        
-        for record in records:
-            # Only process records that have payment_details
-            if record.get('payment_details'):
-                for payment in record['payment_details']:
-                    payment_date = payment.get('date', '')
-                    
-                    # Skip if no payment date
-                    if not payment_date:
-                        continue
-                    
-                    # Apply date filtering
-                    if from_date and payment_date < from_date:
-                        continue
-                    if to_date and payment_date > to_date:
-                        continue
-                    
-                    # Add to results - each payment becomes one row
-                    flattened_data.append({
-                        'id': str(record['_id']),
-                        'date': payment_date,
-                        'patient_name': record.get('patient_name', ''),
-                        'patient_uhid': record.get('patient_uhid', ''),
-                        'mobile_number': record.get('mobile_number', ''),
-                        'company_name': record.get('company_name', ''),
-                        'treatment': record.get('treatment', ''),
-                        'amount': payment.get('amount', 0),
-                        'payment_method': payment.get('payment_method', ''),
-                        'refund': record.get('refund', 0)
-                    })
-        
-        # Sort by date
-        flattened_data.sort(key=lambda x: x['date'])
-        
-        return Response(flattened_data, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    finally:
-        if 'client' in locals():
-            client.close()
-
 
 @api_view(['GET', 'POST', 'PUT'])
-@permission_classes([HasRolePermission])
+@csrf_exempt
+@permission_classes([HasRoleAndDataPermission])
 def other_record_view(request):
+    """
+    GET: Fetch all records (filtered by status if specified)
+    POST: Create new record with 'Pending' status
+    PUT: Update record including status changes
+    """
     try:
         client = MongoClient(mongo_uri)
         db = client["Insurance"]
         collection = db["insurance_otherrecord"]
 
-        # Extract employee_id from request header/body
         employee_id = (
             request.data.get('auth-user-id')
             or request.headers.get('auth-user-id')
@@ -486,8 +435,14 @@ def other_record_view(request):
         if request.method == 'GET':
             from_date = request.GET.get('from_date')
             to_date = request.GET.get('to_date')
+            status_filter = request.GET.get('status')  # NEW: Filter by status
 
-            records = list(collection.find({}))
+            query = {}
+            
+            if status_filter:
+                query['status'] = status_filter
+
+            records = list(collection.find(query))
             processed_records = []
 
             for record in records:
@@ -511,32 +466,27 @@ def other_record_view(request):
                         processed_records.append(record_copy)
 
             for record in processed_records:
-                record['id'] = record['_id']
+                record['id'] = str(record['_id'])
                 del record['_id']
 
-            serializer = OtherRecordSerializer(processed_records, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(processed_records, status=status.HTTP_200_OK)
 
         elif request.method == 'POST':
-            serializer = OtherRecordSerializer(data=request.data)
-            if serializer.is_valid():
-                validated_data = serializer.validated_data
-                validated_data['created_date'] = datetime.now()
-                validated_data['lastmodified_date'] = datetime.now()
-                validated_data['created_by'] = employee_id   # 👈 add created_by
-                validated_data['lastmodified_by'] = employee_id  # 👈 add lastmodified_by
+            validated_data = request.data.copy()
+            validated_data['status'] = 'Pending'
+            validated_data['created_date'] = datetime.now().isoformat()
+            validated_data['lastmodified_date'] = datetime.now().isoformat()
+            validated_data['created_by'] = employee_id
+            validated_data['lastmodified_by'] = employee_id
 
-                validated_data = convert_dates_to_strings(validated_data)
+            validated_data = convert_dates_to_strings(validated_data)
 
-                result = collection.insert_one(validated_data)
-                created_record = collection.find_one({'_id': result.inserted_id})
-                created_record['id'] = created_record['_id']
-                del created_record['_id']
+            result = collection.insert_one(validated_data)
+            created_record = collection.find_one({'_id': result.inserted_id})
+            created_record['id'] = str(created_record['_id'])
+            del created_record['_id']
 
-                response_serializer = OtherRecordSerializer(created_record)
-                return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(created_record, status=status.HTTP_201_CREATED)
 
         elif request.method == 'PUT':
             record_id = request.data.get('id')
@@ -559,7 +509,7 @@ def other_record_view(request):
 
             update_data = {}
             basic_fields = ['date', 'patient_name', 'patient_uhid', 'mobile_number',
-                            'company_name', 'treatment', 'refund']
+                            'company_name', 'treatment', 'refund', 'status']  # Added 'status'
 
             for field in basic_fields:
                 if field in request.data:
@@ -567,16 +517,12 @@ def other_record_view(request):
 
             new_payments = request.data.get("payment_details", [])
             if new_payments:
-                serializer = OtherRecordSerializer(data={'payment_details': new_payments}, partial=True)
-                if not serializer.is_valid():
-                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
                 existing_payments = record.get('payment_details', [])
                 combined_payments = existing_payments + new_payments
                 update_data['payment_details'] = combined_payments
 
-            update_data['lastmodified_date'] = datetime.now()
-            update_data['lastmodified_by'] = employee_id  # 👈 update modifier
+            update_data['lastmodified_date'] = datetime.now().isoformat()
+            update_data['lastmodified_by'] = employee_id
             update_data = convert_dates_to_strings(update_data)
 
             if update_data:
@@ -587,11 +533,10 @@ def other_record_view(request):
 
                 if update_result.modified_count > 0:
                     updated_record = collection.find_one({"_id": object_id})
-                    updated_record['id'] = updated_record['_id']
+                    updated_record['id'] = str(updated_record['_id'])
                     del updated_record['_id']
 
-                    response_serializer = OtherRecordSerializer(updated_record)
-                    return Response(response_serializer.data, status=status.HTTP_200_OK)
+                    return Response(updated_record, status=status.HTTP_200_OK)
                 else:
                     return Response({"message": "No changes made"}, status=status.HTTP_200_OK)
             else:
@@ -602,3 +547,77 @@ def other_record_view(request):
     finally:
         if 'client' in locals():
             client.close()
+
+
+@api_view(['GET'])
+@csrf_exempt
+@permission_classes([HasRoleAndDataPermission])
+def other_record_report_view(request):
+    """
+    Get flattened report data - ALL records with all statuses (Pending, Approved, Collected, Gate Pass Issued)
+    Each payment entry becomes a separate row
+    """
+    try:
+        client = MongoClient(mongo_uri)
+        db = client["Insurance"]
+        collection = db["insurance_otherrecord"]
+        
+        from_date = request.GET.get('from_date')
+        to_date = request.GET.get('to_date')
+        
+        # Get ALL records regardless of status
+        records = list(collection.find({}))
+        flattened_data = []
+        
+        for record in records:
+            if record.get('payment_details'):
+                for payment in record['payment_details']:
+                    payment_date = payment.get('date', '')
+                    
+                    if not payment_date:
+                        continue
+                    
+                    if from_date and payment_date < from_date:
+                        continue
+                    if to_date and payment_date > to_date:
+                        continue
+                    
+                    flattened_data.append({
+                        'id': str(record['_id']),
+                        'date': payment_date,
+                        'ip_op_type': record.get('ip_op_type', ''),
+                        'patient_name': record.get('patient_name', ''),
+                        'patient_uhid': record.get('patient_uhid', ''),
+                        'mobile_number': record.get('mobile_number', ''),
+                        'doctor_name': record.get('doctor_name', ''),
+                        'company_name': record.get('company_name', ''),
+                        'treatment': record.get('treatment', ''),
+                        'amount': payment.get('amount', 0),
+                        'payment_method': payment.get('payment_method', ''),
+                        'has_refund': record.get('has_refund', False),
+                        'refund': record.get('refund', 0),
+                        'status': record.get('status', 'Pending')
+                    })
+        
+        flattened_data.sort(key=lambda x: x['date'], reverse=True)
+        
+        return Response(flattened_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if 'client' in locals():
+            client.close()
+
+
+@api_view(['GET'])
+@csrf_exempt
+@permission_classes([HasRoleAndDataPermission])
+def get_doctor_list(request):
+    mongo_url = os.getenv("GLOBAL_DB_HOST")
+    client = MongoClient(mongo_url)
+    db = client["ER_Billing"]
+    collection = db["doctors_list"]
+
+    doctors = list(collection.find({"is_active": True}, {"_id": 0}))
+    return JsonResponse(doctors, safe=False)

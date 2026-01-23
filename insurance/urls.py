@@ -9,4 +9,5 @@ urlpatterns = [
     re_path(r'^insurance/update/(?P<identifier>.+)/$', views.insurance_update_combined, name='insurance_update_combined'),
     path('other_records/', views.other_record_view, name='other_records'),
     path('other_records/report/', views.other_record_report_view, name='other_records_report'),
+    path('get_doctor_list/', views.get_doctor_list, name='get_doctor_list'),
 ]
