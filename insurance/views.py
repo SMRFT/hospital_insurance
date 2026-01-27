@@ -23,7 +23,7 @@ from django.contrib.auth.hashers import make_password
 from rest_framework_simplejwt.tokens import RefreshToken
 from pymongo import MongoClient
 from datetime import datetime
-from pyauth.auth import HasRolePermission , HasRoleAndDataPermission
+from pyauth.auth import HasRolePermission
 from dotenv import load_dotenv
 import logging
 from datetime import datetime
@@ -40,7 +40,7 @@ mongo_uri = os.getenv("GLOBAL_DB_HOST")
 # views.py
 @api_view(['GET', 'POST'])
 @csrf_exempt
-@permission_classes([HasRoleAndDataPermission])
+@permission_classes([HasRolePermission])
 def insurance(request):
     try:
         client = MongoClient(mongo_uri)
@@ -169,7 +169,7 @@ import mimetypes
 
 @api_view(['GET'])
 @csrf_exempt
-@permission_classes([HasRoleAndDataPermission])
+@permission_classes([HasRolePermission])
 def serve_file(request, file_id):
     client = MongoClient(mongo_uri)
     db = client["Insurance"]
@@ -204,7 +204,7 @@ def serve_file(request, file_id):
     
 @api_view(['POST', 'GET'])
 @csrf_exempt
-@permission_classes([HasRoleAndDataPermission])
+@permission_classes([HasRolePermission])
 def submit_daycare(request):
     # Connect to the MongoDB instance
 
@@ -249,7 +249,7 @@ def submit_daycare(request):
 
 @api_view(['PUT'])
 @csrf_exempt
-@permission_classes([HasRoleAndDataPermission])
+@permission_classes([HasRolePermission])
 def insurance_update_combined(request, identifier):
     try:
         logger.info(f"Attempting to update record with identifier: {identifier}")
@@ -380,7 +380,7 @@ def insurance_update_combined(request, identifier):
 
 @api_view(['GET'])
 @csrf_exempt
-@permission_classes([HasRoleAndDataPermission])
+@permission_classes([HasRolePermission])
 def get_insurance_companies(request):
     try:
         # MongoDB connection
@@ -414,28 +414,35 @@ def convert_dates_to_strings(data):
 
 @api_view(['GET', 'POST', 'PUT'])
 @csrf_exempt
-@permission_classes([HasRoleAndDataPermission])
+@permission_classes([HasRolePermission])
 def other_record_view(request):
     """
     GET: Fetch all records (filtered by status if specified)
     POST: Create new record with 'Pending' status
-    PUT: Update record including status changes
+    PUT: Update record including status changes and approved_by
     """
     try:
         client = MongoClient(mongo_uri)
         db = client["Insurance"]
         collection = db["insurance_otherrecord"]
 
+        # Get employee ID and name from request
         employee_id = (
             request.data.get('auth-user-id')
             or request.headers.get('auth-user-id')
+            or "system"
+        )
+        
+        employee_name = (
+            request.data.get('auth-user-name')
+            or request.headers.get('auth-user-name')
             or "system"
         )
 
         if request.method == 'GET':
             from_date = request.GET.get('from_date')
             to_date = request.GET.get('to_date')
-            status_filter = request.GET.get('status')  # NEW: Filter by status
+            status_filter = request.GET.get('status')
 
             query = {}
             
@@ -473,11 +480,25 @@ def other_record_view(request):
 
         elif request.method == 'POST':
             validated_data = request.data.copy()
+            
+            # Set default status
             validated_data['status'] = 'Pending'
+            
+            # Set timestamps
             validated_data['created_date'] = datetime.now().isoformat()
             validated_data['lastmodified_date'] = datetime.now().isoformat()
             validated_data['created_by'] = employee_id
             validated_data['lastmodified_by'] = employee_id
+            
+            # Ensure has_refund is properly stored as boolean
+            if 'has_refund' in validated_data:
+                validated_data['has_refund'] = bool(validated_data['has_refund'])
+            else:
+                validated_data['has_refund'] = False
+            
+            # Ensure refund amount is stored correctly
+            if 'refund' not in validated_data or validated_data['refund'] == '':
+                validated_data['refund'] = '0'
 
             validated_data = convert_dates_to_strings(validated_data)
 
@@ -508,21 +529,43 @@ def other_record_view(request):
                 return Response({'error': 'Record not found'}, status=status.HTTP_404_NOT_FOUND)
 
             update_data = {}
-            basic_fields = ['date', 'patient_name', 'patient_uhid', 'mobile_number',
-                            'company_name', 'treatment', 'refund', 'status']  # Added 'status'
+            
+            # Basic fields that can be updated
+            basic_fields = [
+                'date', 'patient_name', 'patient_uhid', 'mobile_number',
+                'ip_op_type', 'doctor_name', 'company_name', 'treatment', 
+                'refund', 'status', 'has_refund'
+            ]
 
             for field in basic_fields:
                 if field in request.data:
-                    update_data[field] = request.data[field]
+                    if field == 'has_refund':
+                        # Ensure has_refund is stored as boolean
+                        update_data[field] = bool(request.data[field])
+                    elif field == 'refund':
+                        # Ensure refund is stored as string
+                        update_data[field] = str(request.data[field]) if request.data[field] else '0'
+                    else:
+                        update_data[field] = request.data[field]
+            
+            # Handle status change to 'Approved' - add approved_by field
+            if 'status' in request.data and request.data['status'] == 'Approved':
+                # Only set approved_by if it's not already set
+                if 'approved_by' not in record or not record.get('approved_by'):
+                    update_data['approved_by'] = employee_name
+                    update_data['approved_date'] = datetime.now().isoformat()
 
+            # Handle payment details
             new_payments = request.data.get("payment_details", [])
             if new_payments:
                 existing_payments = record.get('payment_details', [])
                 combined_payments = existing_payments + new_payments
                 update_data['payment_details'] = combined_payments
 
+            # Set last modified info
             update_data['lastmodified_date'] = datetime.now().isoformat()
             update_data['lastmodified_by'] = employee_id
+            
             update_data = convert_dates_to_strings(update_data)
 
             if update_data:
@@ -551,7 +594,7 @@ def other_record_view(request):
 
 @api_view(['GET'])
 @csrf_exempt
-@permission_classes([HasRoleAndDataPermission])
+@permission_classes([HasRolePermission])
 def other_record_report_view(request):
     """
     Get flattened report data - ALL records with all statuses (Pending, Approved, Collected, Gate Pass Issued)
@@ -596,7 +639,9 @@ def other_record_report_view(request):
                         'payment_method': payment.get('payment_method', ''),
                         'has_refund': record.get('has_refund', False),
                         'refund': record.get('refund', 0),
-                        'status': record.get('status', 'Pending')
+                        'status': record.get('status', 'Pending'),
+                        'approved_by': record.get('approved_by', ''),
+                        'approved_date': record.get('approved_date', '')
                     })
         
         flattened_data.sort(key=lambda x: x['date'], reverse=True)
@@ -612,7 +657,7 @@ def other_record_report_view(request):
 
 @api_view(['GET'])
 @csrf_exempt
-@permission_classes([HasRoleAndDataPermission])
+@permission_classes([HasRolePermission])
 def get_doctor_list(request):
     mongo_url = os.getenv("GLOBAL_DB_HOST")
     client = MongoClient(mongo_url)

@@ -77,17 +77,18 @@ class Daycare(AuditModel):
 #OtherReport
 class OtherRecord(AuditModel):
     date = models.DateField(blank=True, null=True)
-    patient_name = models.CharField(max_length=200)
+    ip_op_type = models.CharField(max_length=2, choices=[('IP', 'IP'), ('OP', 'OP')], blank=True, null=True)
     patient_uhid = models.CharField(max_length=50)
+    patient_name = models.CharField(max_length=200)
     mobile_number = models.CharField(max_length=15)
+    doctor_name = models.CharField(max_length=200, blank=True, null=True)
     company_name = models.CharField(max_length=200, blank=True, null=True)
     treatment = models.CharField(max_length=500, blank=True, null=True)
+    has_refund = models.BooleanField(default=False)
     refund = models.CharField(max_length=500, blank=True, null=True)
     payment_details = models.JSONField(default=list)
     status = models.CharField(max_length=20, default='Pending')
-    ip_op_type = models.CharField(max_length=2, choices=[('IP', 'IP'), ('OP', 'OP')], blank=True, null=True)
-    doctor_name = models.CharField(max_length=200, blank=True, null=True)
-    has_refund = models.BooleanField(default=False)
+    approved_by = models.CharField(max_length=500)
 
     def __str__(self):
         return f"{self.patient_name} - {self.patient_uhid}"
