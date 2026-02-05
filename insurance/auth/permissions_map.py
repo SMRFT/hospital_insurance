@@ -6,6 +6,10 @@ PAGE_MAPPING = {
   r'^/_b_a_c_k_e_n_d/Insurance/other_records/report/?(\?.*)?$': 'SIN-API-ORR',
   r'^/_b_a_c_k_e_n_d/Insurance/insurance/?(\?.*)?$': 'SIN-API-IF',
   '/_b_a_c_k_e_n_d/Insurance/get_doctor_list/': 'SIN-P-GDL',
+  r'^/_b_a_c_k_e_n_d/Insurance/other_records/refund_approval/': 'SIN-P-RA',
+  r'^/_b_a_c_k_e_n_d/Insurance/other_records/overall_approval/': 'SIN-P-OP',
+  r'^/_b_a_c_k_e_n_d/Insurance/other_records/final_approval/?(\?.*)?$': 'SIN-P-FA',
+  r'^/_b_a_c_k_e_n_d/Insurance/other_records/refund_approval_update/?(\?.*)?$': 'SIN-P-RAU',
   
 
   'get_insurance_companies/': 'SIN-P-GIC',
@@ -13,7 +17,11 @@ PAGE_MAPPING = {
   'insurance/update/': 'SIN-API-FU',
   'other_records/': 'SIN-API-OR',
   'other_records/report/': 'SIN-P-ORR',
-  'get_doctor_list/': 'SIN-P-GDL'
+  'get_doctor_list/': 'SIN-P-GDL',
+  'other_records/overall_approval/': 'SIN-P-OP',
+  'other_records/refund_approval/': 'SIN-P-RA',
+  'other_records/final_approval/': 'SIN-P-FA',
+  'other_records/refund_approval_update/': 'SIN-P-RAU',
 }
 
 PAGE_ACTION_MAPPING = {

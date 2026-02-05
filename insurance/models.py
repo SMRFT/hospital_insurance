@@ -88,7 +88,18 @@ class OtherRecord(AuditModel):
     refund = models.CharField(max_length=500, blank=True, null=True)
     payment_details = models.JSONField(default=list)
     status = models.CharField(max_length=20, default='Pending')
-    approved_by = models.CharField(max_length=500)
+    
+    is_approved = models.BooleanField(default=False)
+    approved_by = models.CharField(max_length=500, blank=True, null=True)
+    approved_date = models.DateTimeField(blank=True, null=True)
+
+    is_finalapproved = models.BooleanField(default=False)
+    final_approved_by = models.CharField(max_length=500, blank=True, null=True)
+    final_approved_date = models.DateTimeField(blank=True, null=True)
+
+    is_refund_approved = models.BooleanField(default=False)
+    refund_approved_by = models.CharField(max_length=500, blank=True, null=True)
+    refund_approved_date = models.DateTimeField(blank=True, null=True)
 
     def __str__(self):
         return f"{self.patient_name} - {self.patient_uhid}"

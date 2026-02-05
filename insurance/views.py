@@ -22,11 +22,10 @@ from bson import ObjectId
 from django.contrib.auth.hashers import make_password
 from rest_framework_simplejwt.tokens import RefreshToken
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import datetime, timedelta
 from pyauth.auth import HasRolePermission
 from dotenv import load_dotenv
 import logging
-from datetime import datetime
 from django.db.models import Q
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -397,20 +396,76 @@ def get_insurance_companies(request):
         return JsonResponse({"error": "Failed to fetch insurance companies", "details": str(e)}, status=500)
 
 
+# Helper function to convert dates to strings
 def convert_dates_to_strings(data):
-    """Convert datetime.date objects to strings for MongoDB compatibility"""
-    from datetime import date as date_type
     if isinstance(data, dict):
-        return {key: convert_dates_to_strings(value) for key, value in data.items()}
+        return {k: convert_dates_to_strings(v) for k, v in data.items()}
     elif isinstance(data, list):
         return [convert_dates_to_strings(item) for item in data]
-    elif isinstance(data, date_type):
-        return data.isoformat()
     elif isinstance(data, datetime):
         return data.isoformat()
     else:
         return data
 
+
+def get_employee_name_by_id(employee_id):
+    """Get employee name from Global database by employee ID"""
+    try:
+        mongo_url = os.getenv("GLOBAL_DB_HOST")
+        client = MongoClient(mongo_url)
+        db = client["Global"]
+        collection = db["backend_diagnostics_profile"]
+        
+        employee = collection.find_one({"employeeId": str(employee_id)})
+        
+        if employee:
+            return employee.get('employeeName', str(employee_id))
+        return str(employee_id)
+    except Exception as e:
+        print(f"Error fetching employee name: {str(e)}")
+        return str(employee_id)
+    finally:
+        if 'client' in locals():
+            client.close()
+
+
+def check_previous_day_final_approval(collection, record_date):
+    """Check if previous day records are all final approved"""
+    try:
+        record_date_obj = datetime.strptime(record_date, '%Y-%m-%d').date()
+        previous_date = (record_date_obj - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Find all records from previous day
+        previous_records = list(collection.find({
+            'date': previous_date
+        }))
+        
+        if not previous_records:
+            # No records on previous day, so allow approval
+            return True, None
+        
+        # Check if any record is not final approved
+        for record in previous_records:
+            if not record.get('is_finalapproved', False):
+                return False, previous_date
+        
+        return True, None
+    except Exception as e:
+        print(f"Error checking previous day approval: {str(e)}")
+        return True, None  # In case of error, allow the operation
+    
+    
+AUTH_FIELDS = [
+    'auth-user-id',
+    'auth-user-name',
+    'auth-user-email',
+    'auth-branch-code',
+    'auth-page-id',
+    'auth-action-id',
+    'auth-permission-id',
+    'auth-allowed-action-codes',
+    'auth-allowed-branch-codes'
+]
 
 @api_view(['GET', 'POST', 'PUT'])
 @csrf_exempt
@@ -426,16 +481,10 @@ def other_record_view(request):
         db = client["Insurance"]
         collection = db["insurance_otherrecord"]
 
-        # Get employee ID and name from request
+        # Get employee ID from request
         employee_id = (
             request.data.get('auth-user-id')
             or request.headers.get('auth-user-id')
-            or "system"
-        )
-        
-        employee_name = (
-            request.data.get('auth-user-name')
-            or request.headers.get('auth-user-name')
             or "system"
         )
 
@@ -470,6 +519,15 @@ def other_record_view(request):
                     if filtered_payments:
                         record_copy = record.copy()
                         record_copy['payment_details'] = filtered_payments
+                        
+                        # Get employee names for display
+                        if record_copy.get('approved_by'):
+                            record_copy['approved_by_name'] = get_employee_name_by_id(record_copy['approved_by'])
+                        if record_copy.get('final_approved_by'):
+                            record_copy['final_approved_by_name'] = get_employee_name_by_id(record_copy['final_approved_by'])
+                        if record_copy.get('refund_approved_by'):
+                            record_copy['refund_approved_by_name'] = get_employee_name_by_id(record_copy['refund_approved_by'])
+                        
                         processed_records.append(record_copy)
 
             for record in processed_records:
@@ -479,10 +537,16 @@ def other_record_view(request):
             return Response(processed_records, status=status.HTTP_200_OK)
 
         elif request.method == 'POST':
-            validated_data = request.data.copy()
+            validated_data = {
+                k: v for k, v in request.data.items()
+                if k not in AUTH_FIELDS
+            }
             
-            # Set default status
+            # Set default status and approval flags
             validated_data['status'] = 'Pending'
+            validated_data['is_approved'] = False
+            validated_data['is_finalapproved'] = False
+            validated_data['is_refund_approved'] = False
             
             # Set timestamps
             validated_data['created_date'] = datetime.now().isoformat()
@@ -528,6 +592,20 @@ def other_record_view(request):
             if not record:
                 return Response({'error': 'Record not found'}, status=status.HTTP_404_NOT_FOUND)
 
+            new_status = request.data.get('status')
+            
+            # Check if trying to approve/collect/issue gate pass
+            if new_status in ['Approved', 'Collected', 'Gate Pass Issued']:
+                record_date = record.get('date')
+                if record_date:
+                    # Check if previous day is final approved
+                    is_allowed, previous_date = check_previous_day_final_approval(collection, record_date)
+                    if not is_allowed:
+                        return Response({
+                            'error': f'Not Final Approved for {previous_date}',
+                            'message': f'Previous day ({previous_date}) records must be final approved before updating this record'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
             update_data = {}
             
             # Basic fields that can be updated
@@ -540,27 +618,18 @@ def other_record_view(request):
             for field in basic_fields:
                 if field in request.data:
                     if field == 'has_refund':
-                        # Ensure has_refund is stored as boolean
                         update_data[field] = bool(request.data[field])
                     elif field == 'refund':
-                        # Ensure refund is stored as string
                         update_data[field] = str(request.data[field]) if request.data[field] else '0'
                     else:
                         update_data[field] = request.data[field]
             
-            # Handle status change to 'Approved' - add approved_by field
-            if 'status' in request.data and request.data['status'] == 'Approved':
-                # Only set approved_by if it's not already set
-                if 'approved_by' not in record or not record.get('approved_by'):
-                    update_data['approved_by'] = employee_name
+            # Handle status change to 'Approved'
+            if new_status == 'Approved':
+                if not record.get('is_approved', False):
+                    update_data['is_approved'] = True
+                    update_data['approved_by'] = employee_id
                     update_data['approved_date'] = datetime.now().isoformat()
-
-            # Handle payment details
-            new_payments = request.data.get("payment_details", [])
-            if new_payments:
-                existing_payments = record.get('payment_details', [])
-                combined_payments = existing_payments + new_payments
-                update_data['payment_details'] = combined_payments
 
             # Set last modified info
             update_data['lastmodified_date'] = datetime.now().isoformat()
@@ -576,6 +645,15 @@ def other_record_view(request):
 
                 if update_result.modified_count > 0:
                     updated_record = collection.find_one({"_id": object_id})
+                    
+                    # Get employee names for display
+                    if updated_record.get('approved_by'):
+                        updated_record['approved_by_name'] = get_employee_name_by_id(updated_record['approved_by'])
+                    if updated_record.get('final_approved_by'):
+                        updated_record['final_approved_by_name'] = get_employee_name_by_id(updated_record['final_approved_by'])
+                    if updated_record.get('refund_approved_by'):
+                        updated_record['refund_approved_by_name'] = get_employee_name_by_id(updated_record['refund_approved_by'])
+                    
                     updated_record['id'] = str(updated_record['_id'])
                     del updated_record['_id']
 
@@ -597,7 +675,7 @@ def other_record_view(request):
 @permission_classes([HasRolePermission])
 def other_record_report_view(request):
     """
-    Get flattened report data - ALL records with all statuses (Pending, Approved, Collected, Gate Pass Issued)
+    Get flattened report data - ALL records with all statuses
     Each payment entry becomes a separate row
     """
     try:
@@ -625,7 +703,7 @@ def other_record_report_view(request):
                     if to_date and payment_date > to_date:
                         continue
                     
-                    flattened_data.append({
+                    flat_record = {
                         'id': str(record['_id']),
                         'date': payment_date,
                         'ip_op_type': record.get('ip_op_type', ''),
@@ -640,9 +718,26 @@ def other_record_report_view(request):
                         'has_refund': record.get('has_refund', False),
                         'refund': record.get('refund', 0),
                         'status': record.get('status', 'Pending'),
+                        'is_approved': record.get('is_approved', False),
                         'approved_by': record.get('approved_by', ''),
-                        'approved_date': record.get('approved_date', '')
-                    })
+                        'approved_date': record.get('approved_date', ''),
+                        'is_finalapproved': record.get('is_finalapproved', False),
+                        'final_approved_by': record.get('final_approved_by', ''),
+                        'final_approved_date': record.get('final_approved_date', ''),
+                        'is_refund_approved': record.get('is_refund_approved', False),
+                        'refund_approved_by': record.get('refund_approved_by', ''),
+                        'refund_approved_date': record.get('refund_approved_date', '')
+                    }
+                    
+                    # Get employee names for display
+                    if flat_record['approved_by']:
+                        flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'])
+                    if flat_record['final_approved_by']:
+                        flat_record['final_approved_by_name'] = get_employee_name_by_id(flat_record['final_approved_by'])
+                    if flat_record['refund_approved_by']:
+                        flat_record['refund_approved_by_name'] = get_employee_name_by_id(flat_record['refund_approved_by'])
+                    
+                    flattened_data.append(flat_record)
         
         flattened_data.sort(key=lambda x: x['date'], reverse=True)
         
@@ -650,6 +745,283 @@ def other_record_report_view(request):
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if 'client' in locals():
+            client.close()
+
+
+@api_view(['GET'])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def overall_approval_view(request):
+    """
+    GET: Fetch all records with 'Gate Pass Issued' status that are NOT yet final approved
+    """
+    try:
+        client = MongoClient(mongo_uri)
+        db = client["Insurance"]
+        collection = db["insurance_otherrecord"]
+        
+        from_date = request.GET.get('from_date')
+        to_date = request.GET.get('to_date')
+        
+        # Get records with 'Gate Pass Issued' status that are NOT final approved
+        records = list(collection.find({
+            'status': 'Gate Pass Issued',
+            'is_finalapproved': {'$ne': True}
+        }))
+        
+        approval_data = []
+        
+        for record in records:
+            if record.get('payment_details'):
+                for payment in record['payment_details']:
+                    payment_date = payment.get('date', '')
+                    
+                    if not payment_date:
+                        continue
+                    
+                    if from_date and payment_date < from_date:
+                        continue
+                    if to_date and payment_date > to_date:
+                        continue
+                    
+                    flat_record = {
+                        'id': str(record['_id']),
+                        'date': payment_date,
+                        'patient_name': record.get('patient_name', ''),
+                        'patient_uhid': record.get('patient_uhid', ''),
+                        'mobile_number': record.get('mobile_number', ''),
+                        'doctor_name': record.get('doctor_name', ''),
+                        'company_name': record.get('company_name', ''),
+                        'treatment': record.get('treatment', ''),
+                        'amount': payment.get('amount', 0),
+                        'payment_method': payment.get('payment_method', ''),
+                        'has_refund': record.get('has_refund', False),
+                        'refund': record.get('refund', 0),
+                        'status': record.get('status', ''),
+                        'is_approved': record.get('is_approved', False),
+                        'approved_by': record.get('approved_by', ''),
+                        'approved_date': record.get('approved_date', ''),
+                        'is_finalapproved': record.get('is_finalapproved', False),
+                        'final_approved_by': record.get('final_approved_by', ''),
+                        'final_approved_date': record.get('final_approved_date', '')
+                    }
+                    
+                    # Get employee names for display
+                    if flat_record['approved_by']:
+                        flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'])
+                    if flat_record['final_approved_by']:
+                        flat_record['final_approved_by_name'] = get_employee_name_by_id(flat_record['final_approved_by'])
+                    
+                    approval_data.append(flat_record)
+        
+        approval_data.sort(key=lambda x: x['date'], reverse=True)
+        
+        return Response(approval_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if 'client' in locals():
+            client.close()
+
+
+@api_view(['POST'])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def final_approval_view(request):
+    """
+    POST: Update final_approved_by and final_approved_date for records with status 'Gate Pass Issued'
+    """
+    try:
+        client = MongoClient(mongo_uri)
+        db = client["Insurance"]
+        collection = db["insurance_otherrecord"]
+
+        # Get employee ID from request
+        employee_id = (
+            request.data.get('auth-user-id')
+            or request.headers.get('auth-user-id')
+            or "system"
+        )
+
+        record_ids = request.data.get('record_ids', [])
+        
+        if not record_ids:
+            return Response({'error': 'No record IDs provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_count = 0
+        
+        for record_id in record_ids:
+            try:
+                if isinstance(record_id, dict) and '$oid' in record_id:
+                    object_id = ObjectId(record_id['$oid'])
+                elif isinstance(record_id, str):
+                    object_id = ObjectId(record_id)
+                else:
+                    object_id = ObjectId(record_id)
+            except Exception as e:
+                continue
+
+            update_data = {
+                'is_finalapproved': True,
+                'final_approved_by': employee_id,
+                'final_approved_date': datetime.now().isoformat(),
+                'lastmodified_date': datetime.now().isoformat(),
+                'lastmodified_by': employee_id
+            }
+
+            update_result = collection.update_one(
+                {"_id": object_id},
+                {"$set": update_data}
+            )
+
+            if update_result.modified_count > 0:
+                updated_count += 1
+
+        return Response({
+            'message': f'{updated_count} record(s) final approved successfully',
+            'updated_count': updated_count
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if 'client' in locals():
+            client.close()
+
+
+@api_view(['GET'])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def refund_approval_view(request):
+    """
+    GET: Fetch all records with refund amount that are NOT yet refund approved
+    """
+    try:
+        client = MongoClient(mongo_uri)
+        db = client["Insurance"]
+        collection = db["insurance_otherrecord"]
+        
+        from_date = request.GET.get('from_date')
+        to_date = request.GET.get('to_date')
+        
+        # Get records with has_refund = True that are NOT refund approved
+        records = list(collection.find({
+            'has_refund': True,
+            'is_refund_approved': {'$ne': True}
+        }))
+        
+        refund_data = []
+        
+        for record in records:
+            if record.get('payment_details'):
+                for payment in record['payment_details']:
+                    payment_date = payment.get('date', '')
+                    
+                    if not payment_date:
+                        continue
+                    
+                    if from_date and payment_date < from_date:
+                        continue
+                    if to_date and payment_date > to_date:
+                        continue
+                    
+                    flat_record = {
+                        'id': str(record['_id']),
+                        'date': payment_date,
+                        'patient_name': record.get('patient_name', ''),
+                        'patient_uhid': record.get('patient_uhid', ''),
+                        'mobile_number': record.get('mobile_number', ''),
+                        'company_name': record.get('company_name', ''),
+                        'treatment': record.get('treatment', ''),
+                        'amount': payment.get('amount', 0),
+                        'payment_method': payment.get('payment_method', ''),
+                        'refund': record.get('refund', 0),
+                        'status': record.get('status', ''),
+                        'is_refund_approved': record.get('is_refund_approved', False),
+                        'refund_approved_by': record.get('refund_approved_by', ''),
+                        'refund_approved_date': record.get('refund_approved_date', '')
+                    }
+                    
+                    # Get employee names for display
+                    if flat_record['refund_approved_by']:
+                        flat_record['refund_approved_by_name'] = get_employee_name_by_id(flat_record['refund_approved_by'])
+                    
+                    refund_data.append(flat_record)
+        
+        refund_data.sort(key=lambda x: x['date'], reverse=True)
+        
+        return Response(refund_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if 'client' in locals():
+            client.close()
+
+
+@api_view(['PUT'])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def refund_approval_update_view(request):
+    """
+    PUT: Update refund_approved_by and refund_approved_date for records with refund amount
+    """
+    try:
+        client = MongoClient(mongo_uri)
+        db = client["Insurance"]
+        collection = db["insurance_otherrecord"]
+
+        # Get employee ID from request
+        employee_id = (
+            request.data.get('auth-user-id')
+            or request.headers.get('auth-user-id')
+            or "system"
+        )
+
+        record_ids = request.data.get('record_ids', [])
+        
+        if not record_ids:
+            return Response({'error': 'No record IDs provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_count = 0
+        
+        for record_id in record_ids:
+            try:
+                if isinstance(record_id, dict) and '$oid' in record_id:
+                    object_id = ObjectId(record_id['$oid'])
+                elif isinstance(record_id, str):
+                    object_id = ObjectId(record_id)
+                else:
+                    object_id = ObjectId(record_id)
+            except Exception as e:
+                continue
+
+            update_data = {
+                'is_refund_approved': True,
+                'refund_approved_by': employee_id,
+                'refund_approved_date': datetime.now().isoformat(),
+                'lastmodified_date': datetime.now().isoformat(),
+                'lastmodified_by': employee_id
+            }
+
+            update_result = collection.update_one(
+                {"_id": object_id},
+                {"$set": update_data}
+            )
+
+            if update_result.modified_count > 0:
+                updated_count += 1
+
+        return Response({
+            'message': f'{updated_count} refund(s) approved successfully',
+            'updated_count': updated_count
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     finally:
         if 'client' in locals():
             client.close()
