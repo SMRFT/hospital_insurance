@@ -753,6 +753,85 @@ def other_record_report_view(request):
 @api_view(['GET'])
 @csrf_exempt
 @permission_classes([HasRolePermission])
+def collected_finalapproved_view(request):
+    """
+    GET: Fetch all records with 'Final Approved'
+    """
+    try:
+        client = MongoClient(mongo_uri)
+        db = client["Insurance"]
+        collection = db["insurance_otherrecord"]
+        
+        from_date = request.GET.get('from_date')
+        to_date = request.GET.get('to_date')
+        
+        # Get records with 'Final Approved' 
+        records = list(collection.find({
+            'status': 'Final Approved',
+            'is_finalapproved': True
+        }))
+
+        
+        approval_data = []
+        
+        for record in records:
+            if record.get('payment_details'):
+                for payment in record['payment_details']:
+                    payment_date = payment.get('date', '')
+                    
+                    if not payment_date:
+                        continue
+                    
+                    if from_date and payment_date < from_date:
+                        continue
+                    if to_date and payment_date > to_date:
+                        continue
+                    
+                    flat_record = {
+                        'id': str(record['_id']),
+                        'date': payment_date,
+                        'patient_name': record.get('patient_name', ''),
+                        'patient_uhid': record.get('patient_uhid', ''),
+                        'mobile_number': record.get('mobile_number', ''),
+                        'doctor_name': record.get('doctor_name', ''),
+                        'company_name': record.get('company_name', ''),
+                        'treatment': record.get('treatment', ''),
+                        'amount': payment.get('amount', 0),
+                        'payment_method': payment.get('payment_method', ''),
+                        'has_refund': record.get('has_refund', False),
+                        'refund': record.get('refund', 0),
+                        'status': record.get('status', ''),
+                        'is_approved': record.get('is_approved', False),
+                        'approved_by': record.get('approved_by', ''),
+                        'approved_date': record.get('approved_date', ''),
+                        'is_finalapproved': record.get('is_finalapproved', False),
+                        'final_approved_by': record.get('final_approved_by', ''),
+                        'final_approved_date': record.get('final_approved_date', '')
+                    }
+                    
+                    # Get employee names for display
+                    if flat_record['approved_by']:
+                        flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'])
+                    if flat_record['final_approved_by']:
+                        flat_record['final_approved_by_name'] = get_employee_name_by_id(flat_record['final_approved_by'])
+                    
+                    approval_data.append(flat_record)
+        
+        approval_data.sort(key=lambda x: x['date'], reverse=True)
+        
+        return Response(approval_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if 'client' in locals():
+            client.close()
+
+
+
+@api_view(['GET'])
+@csrf_exempt
+@permission_classes([HasRolePermission])
 def overall_approval_view(request):
     """
     GET: Fetch all records with 'Gate Pass Issued' status that are NOT yet final approved
@@ -767,8 +846,8 @@ def overall_approval_view(request):
         
         # Get records with 'Gate Pass Issued' status that are NOT final approved
         records = list(collection.find({
-            'status': 'Gate Pass Issued',
-            'is_finalapproved': {'$ne': True}
+            'status': 'Collected',
+            'is_approved': True
         }))
         
         approval_data = []
@@ -865,6 +944,7 @@ def final_approval_view(request):
                 continue
 
             update_data = {
+                'status': "Final Approved",
                 'is_finalapproved': True,
                 'final_approved_by': employee_id,
                 'final_approved_date': datetime.now().isoformat(),

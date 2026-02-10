@@ -12,6 +12,7 @@ urlpatterns = [
     path('other_records/refund_approval/',views.refund_approval_view,name='refund_approval'),
     path('other_records/final_approval/',views.final_approval_view,name='final_approval'),
     path('other_records/refund_approval_update/',views.refund_approval_update_view,name='refund_approval_update'),
+    path('other_records/collected_finalapproved/',views.collected_finalapproved_view,name='refund_approval_update'),
     path('other_records/report/', views.other_record_report_view, name='other_records_report'),
     path('get_doctor_list/', views.get_doctor_list, name='get_doctor_list'),
 ]
