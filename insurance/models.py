@@ -1,6 +1,7 @@
 from django.db import models
 
 
+# models.py
 class AuditModel(models.Model):
     created_by = models.CharField(max_length=100, blank=True, null=True)
     created_date = models.DateTimeField(auto_now_add=True)
@@ -17,7 +18,6 @@ class AuditModel(models.Model):
         super().save(*args, **kwargs)
 
 
-#Insurance
 class Insurance(AuditModel):
     patient_uhid = models.CharField(max_length=255, blank=True, null=True)
     patient_name = models.CharField(max_length=255, blank=True, null=True)
@@ -49,10 +49,10 @@ class Insurance(AuditModel):
     approvalDate = models.CharField(max_length=255, blank=True, null=True)
     treatmentType = models.CharField(max_length=255, blank=True, null=True)
     radiotherapyCycles = models.CharField(max_length=255, blank=True, null=True)
-    remarks = models.TextField(blank=True, null=True)  # Longer remarks field
+    remarks = models.TextField(blank=True, null=True)
     pendingAmount = models.CharField(max_length=255, blank=True, null=True)
-    editHistory = models.JSONField(default=list) 
- 
+    editHistory = models.JSONField(default=list)
+
 
 #Daycare
 class Daycare(AuditModel):
@@ -77,17 +77,33 @@ class Daycare(AuditModel):
 #OtherReport
 class OtherRecord(AuditModel):
     date = models.DateField(blank=True, null=True)
-    patient_name = models.CharField(max_length=200)
+    ip_op_type = models.CharField(max_length=2, choices=[('IP', 'IP'), ('OP', 'OP')], blank=True, null=True)
     patient_uhid = models.CharField(max_length=50)
+    patient_name = models.CharField(max_length=200)
     mobile_number = models.CharField(max_length=15)
+    doctor_name = models.CharField(max_length=200, blank=True, null=True)
     company_name = models.CharField(max_length=200, blank=True, null=True)
     treatment = models.CharField(max_length=500, blank=True, null=True)
+    has_refund = models.BooleanField(default=False)
     refund = models.CharField(max_length=500, blank=True, null=True)
     payment_details = models.JSONField(default=list)
+    status = models.CharField(max_length=20, default='Pending')
     
+    is_approved = models.BooleanField(default=False)
+    approved_by = models.CharField(max_length=500, blank=True, null=True)
+    approved_date = models.DateTimeField(blank=True, null=True)
+
+    is_finalapproved = models.BooleanField(default=False)
+    final_approved_by = models.CharField(max_length=500, blank=True, null=True)
+    final_approved_date = models.DateTimeField(blank=True, null=True)
+
+    is_refund_approved = models.BooleanField(default=False)
+    refund_approved_by = models.CharField(max_length=500, blank=True, null=True)
+    refund_approved_date = models.DateTimeField(blank=True, null=True)
+
     def __str__(self):
         return f"{self.patient_name} - {self.patient_uhid}"
-    
+
     @property
     def total_amount(self):
         """Calculate total amount from payment details"""

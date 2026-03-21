@@ -134,7 +134,7 @@ USE_L10N = True
 USE_TZ = True
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000","http://localhost:3001",'https://salemcosmeticclinic.netlify.app','https://shinovadatabase.in','https://api.shinovadatabase.in',"https://www.salemcosmeticclinic.shinova.in"]
+    "http://localhost:3000","http://localhost:3001",'https://shinovadatabase.in','https://api.shinovadatabase.in']
 
 CORS_ALLOW_CREDENTIALS = True
 # Static files (CSS, JavaScript, Images)

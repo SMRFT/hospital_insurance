@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-d^)yc)$9xs@yq$__z$0up-d4c%yykmrzps73v&0l=680wy3b6)
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS= ["shinova.in",'https://shinova.in']
+ALLOWED_HOSTS = ['shinova.in', 'www.shinova.in', '127.0.0.1', 'localhost']
 CORS_ALLOW_CREDENTIALS = True
 
 
