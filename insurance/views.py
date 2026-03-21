@@ -1111,10 +1111,90 @@ def refund_approval_update_view(request):
 @csrf_exempt
 @permission_classes([HasRolePermission])
 def get_doctor_list(request):
-    mongo_url = os.getenv("GLOBAL_DB_HOST")
-    client = MongoClient(mongo_url)
+    client = MongoClient(os.getenv("GLOBAL_DB_HOST"))
     db = client["ER_Billing"]
     collection = db["doctors_list"]
 
     doctors = list(collection.find({"is_active": True}, {"_id": 0}))
     return JsonResponse(doctors, safe=False)
+
+
+@api_view(['GET'])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def get_treatment_list(request):
+    client = MongoClient(os.getenv("GLOBAL_DB_HOST"))
+    db = client["Insurance"]
+    collection = db["treatment_list"] 
+
+    treatments = list(collection.find({"is_active": True}, {"_id": 0}))
+    return JsonResponse(treatments, safe=False)
+
+
+@api_view(['POST'])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def add_doctor(request):
+    try:
+        data = request.data
+
+        client = MongoClient(os.getenv("GLOBAL_DB_HOST"))
+        db = client["ER_Billing"]
+        collection = db["doctors_list"]
+
+        # Get employee ID from request
+        employee_id = (
+            request.data.get('auth-user-id')
+            or request.headers.get('auth-user-id')
+            or "system"
+        )
+
+        doctor = {
+            "doctor_name": data.get("doctor_name"),
+            "department": data.get("department"),
+            "is_active": True,
+            "created_by": employee_id,
+            "created_date": datetime.now()
+        }
+
+        collection.insert_one(doctor)
+
+        return JsonResponse({"message": "Doctor added successfully"}, status=201)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+
+
+@api_view(['POST'])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def add_treatment(request):
+    try:
+        data = request.data
+
+        client = MongoClient(os.getenv("GLOBAL_DB_HOST"))
+        db = client["Insurance"]
+        collection = db["treatment_list"]
+
+        # Get employee ID from request
+        employee_id = (
+            request.data.get('auth-user-id')
+            or request.headers.get('auth-user-id')
+            or "system"
+        )
+
+        treatment = {
+            "id": data.get("id"),
+            "name": data.get("name"),
+            "is_active": True,
+            "created_by": employee_id,
+            "created_date": datetime.now()
+        }
+
+        collection.insert_one(treatment)
+
+        return JsonResponse({"message": "Treatment added successfully"}, status=201)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
