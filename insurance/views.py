@@ -521,6 +521,8 @@ def other_record_view(request):
                         record_copy['payment_details'] = filtered_payments
                         
                         # Get employee names for display
+                        if record_copy.get('created_by'):
+                            record_copy['created_by_name'] = get_employee_name_by_id(record_copy['created_by'])
                         if record_copy.get('approved_by'):
                             record_copy['approved_by_name'] = get_employee_name_by_id(record_copy['approved_by'])
                         if record_copy.get('final_approved_by'):
@@ -726,10 +728,13 @@ def other_record_report_view(request):
                         'final_approved_date': record.get('final_approved_date', ''),
                         'is_refund_approved': record.get('is_refund_approved', False),
                         'refund_approved_by': record.get('refund_approved_by', ''),
-                        'refund_approved_date': record.get('refund_approved_date', '')
+                        'refund_approved_date': record.get('refund_approved_date', ''),
+                        'created_by': record.get('created_by', ''),
                     }
                     
                     # Get employee names for display
+                    if flat_record['created_by']:
+                        flat_record['created_by_name'] = get_employee_name_by_id(flat_record['created_by'])
                     if flat_record['approved_by']:
                         flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'])
                     if flat_record['final_approved_by']:
@@ -879,6 +884,7 @@ def overall_approval_view(request):
                         'has_refund': record.get('has_refund', False),
                         'refund': record.get('refund', 0),
                         'status': record.get('status', ''),
+                        'created_by': record.get('created_by', ''),
                         'is_approved': record.get('is_approved', False),
                         'approved_by': record.get('approved_by', ''),
                         'approved_date': record.get('approved_date', ''),
@@ -888,6 +894,8 @@ def overall_approval_view(request):
                     }
                     
                     # Get employee names for display
+                    if flat_record['created_by']:
+                        flat_record['created_by_name'] = get_employee_name_by_id(flat_record['created_by'])
                     if flat_record['approved_by']:
                         flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'])
                     if flat_record['final_approved_by']:
