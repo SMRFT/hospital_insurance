@@ -811,10 +811,13 @@ def collected_finalapproved_view(request):
                         'approved_date': record.get('approved_date', ''),
                         'is_finalapproved': record.get('is_finalapproved', False),
                         'final_approved_by': record.get('final_approved_by', ''),
-                        'final_approved_date': record.get('final_approved_date', '')
+                        'final_approved_date': record.get('final_approved_date', ''),
+                        'created_by': record.get('created_by', ''),
                     }
                     
                     # Get employee names for display
+                    if flat_record['created_by']:
+                        flat_record['created_by_name'] = get_employee_name_by_id(flat_record['created_by'])
                     if flat_record['approved_by']:
                         flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'])
                     if flat_record['final_approved_by']:
