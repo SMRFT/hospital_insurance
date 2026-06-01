@@ -34,8 +34,14 @@ class InsuranceSerializer(serializers.ModelSerializer):
         return value
 
 
+from .models import Enquiry
+class EnquirySerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
 
-
+    class Meta:
+        model = Enquiry
+        fields = "__all__"
+        read_only_fields = ["enquiry_id"]
 
 class OtherRecordSerializer(serializers.Serializer):
     id = ObjectIdField(read_only=True)

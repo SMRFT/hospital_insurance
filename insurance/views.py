@@ -1209,3 +1209,83 @@ def add_treatment(request):
 
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=400)
+    
+
+from .models import Enquiry
+from .serializers import EnquirySerializer
+@api_view(["GET", "POST"])
+# @permission_classes([HasRolePermission])
+def enquiry_view(request):
+
+    if request.method == "GET":
+
+        enquiries = Enquiry.objects.all().order_by("-created_date")
+        serializer = EnquirySerializer(enquiries, many=True)
+
+        return Response(serializer.data)
+
+    elif request.method == "POST":
+
+        serializer = EnquirySerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+
+            return Response(
+                {
+                    "success": True,
+                    "message": "Enquiry created successfully",
+                    "data": serializer.data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        return Response(
+            {
+                "success": False,
+                "errors": serializer.errors,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+@api_view(["GET"])
+def enquiry_list(request):
+    enquiries = Enquiry.objects.all().order_by("-created_date")
+    serializer = EnquirySerializer(enquiries, many=True)
+    return Response(serializer.data)
+
+
+@api_view(["PUT"])
+def enquiry_update(request, enquiry_id):    
+    try:
+        enquiry = Enquiry.objects.get(enquiry_id=enquiry_id)
+    except Enquiry.DoesNotExist:
+        return Response(
+            {
+                "success": False,
+                "message": "Enquiry not found",
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    serializer = EnquirySerializer(enquiry, data=request.data, partial=True)
+
+    if serializer.is_valid():
+        serializer.save()
+
+        return Response(
+            {
+                "success": True,
+                "message": "Enquiry updated successfully",
+                "data": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    return Response(
+        {
+            "success": False,
+            "errors": serializer.errors,
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )

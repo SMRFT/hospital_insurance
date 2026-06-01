@@ -18,4 +18,7 @@ urlpatterns = [
     path('get_treatment_list/', views.get_treatment_list, name='get_treatment_list'),
     path('add_doctor/',         views.add_doctor,         name='add_doctor'),
     path('add_treatment/',      views.add_treatment,      name='add_treatment'),
+    path('enquiry/', views.enquiry_view, name='enquiry'),
+    path('enquiry_list/', views.enquiry_list, name='enquiry_list'),
+    path('enquiry/update/<int:enquiry_id>/', views.enquiry_update, name='enquiry_update'),
 ]

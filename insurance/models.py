@@ -110,3 +110,34 @@ class OtherRecord(AuditModel):
         if not self.payment_details:
             return 0
         return sum(float(payment.get('amount', 0)) for payment in self.payment_details)
+    
+class Enquiry(AuditModel):
+    enquiry_id = models.IntegerField(primary_key=True)
+    date = models.DateField(null=True, blank=True)
+
+    ipNumber = models.CharField(max_length=100, null=True, blank=True)
+    opNumber = models.CharField(max_length=100, null=True, blank=True)
+
+    patientName = models.CharField(max_length=255)
+    phoneNumber = models.CharField(max_length=15)
+
+    insuranceName = models.CharField(max_length=100, null=True, blank=True)
+    specificInsuranceCompany = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True
+    )
+
+    reasonForApproach = models.TextField(null=True, blank=True)
+    followup_date = models.DateField(null=True, blank=True)
+    followup_Remarks = models.TextField(null=True, blank=True)
+
+
+    def save(self, *args, **kwargs):
+        if self.enquiry_id is None:
+            last = Enquiry.objects.order_by('-enquiry_id').first()
+            self.enquiry_id = (last.enquiry_id + 1) if last else 1
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.patientName
