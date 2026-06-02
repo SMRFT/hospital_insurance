@@ -1211,64 +1211,66 @@ def add_treatment(request):
         return JsonResponse({"error": str(e)}, status=400)
     
 
-from .models import Enquiry
-from .serializers import EnquirySerializer
+from .models import Enquiry, FollowUp
+from .serializers import EnquirySerializer, FollowUpSerializer
+# ─────────────────────────────────────────────────────────────
+# Helper
+# ─────────────────────────────────────────────────────────────
+
+def _date_filtered_enquiries(request):
+    """Return Enquiry queryset filtered by from_date / to_date query params."""
+    qs = Enquiry.objects.prefetch_related(
+        "follow_ups"
+    ).order_by("-date", "-enquiry_id")
+
+    from_date = request.query_params.get("from_date")
+    to_date = request.query_params.get("to_date")
+
+    if from_date:
+        qs = qs.filter(date__gte=from_date)
+
+    if to_date:
+        qs = qs.filter(date__lte=to_date)
+
+    return qs
+
+
+def get_employee_id(request):
+    return (
+        request.data.get("auth-user-id")
+        or request.headers.get("auth-user-id")
+        or "system"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# ENQUIRY
+# ─────────────────────────────────────────────────────────────
+
 @api_view(["GET", "POST"])
-# @permission_classes([HasRolePermission])
+@csrf_exempt
+@permission_classes([HasRolePermission])
 def enquiry_view(request):
 
     if request.method == "GET":
-
-        enquiries = Enquiry.objects.all().order_by("-created_date")
+        enquiries = _date_filtered_enquiries(request)
         serializer = EnquirySerializer(enquiries, many=True)
 
-        return Response(serializer.data)
+        return Response({
+            "success": True,
+            "data": serializer.data
+        })
 
-    elif request.method == "POST":
+    # POST
+    employee_id = get_employee_id(request)
+    print("Creating enquiry by employee:", employee_id)
 
-        serializer = EnquirySerializer(data=request.data)
+    data = request.data.copy()
 
-        if serializer.is_valid():
-            serializer.save()
+    data["created_by"] = employee_id
+    data["created_date"] = timezone.now()
 
-            return Response(
-                {
-                    "success": True,
-                    "message": "Enquiry created successfully",
-                    "data": serializer.data,
-                },
-                status=status.HTTP_201_CREATED,
-            )
-
-        return Response(
-            {
-                "success": False,
-                "errors": serializer.errors,
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-    
-@api_view(["GET"])
-def enquiry_list(request):
-    enquiries = Enquiry.objects.all().order_by("-created_date")
-    serializer = EnquirySerializer(enquiries, many=True)
-    return Response(serializer.data)
-
-
-@api_view(["PUT"])
-def enquiry_update(request, enquiry_id):    
-    try:
-        enquiry = Enquiry.objects.get(enquiry_id=enquiry_id)
-    except Enquiry.DoesNotExist:
-        return Response(
-            {
-                "success": False,
-                "message": "Enquiry not found",
-            },
-            status=status.HTTP_404_NOT_FOUND,
-        )
-
-    serializer = EnquirySerializer(enquiry, data=request.data, partial=True)
+    serializer = EnquirySerializer(data=data)
 
     if serializer.is_valid():
         serializer.save()
@@ -1276,16 +1278,221 @@ def enquiry_update(request, enquiry_id):
         return Response(
             {
                 "success": True,
-                "message": "Enquiry updated successfully",
+                "message": "Enquiry created successfully",
                 "data": serializer.data,
             },
-            status=status.HTTP_200_OK,
+            status=status.HTTP_201_CREATED,
         )
 
     return Response(
         {
             "success": False,
-            "errors": serializer.errors,
+            "errors": serializer.errors
         },
         status=status.HTTP_400_BAD_REQUEST,
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# ENQUIRY LIST
+# ─────────────────────────────────────────────────────────────
+
+@api_view(["GET"])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def enquiry_list(request):
+
+    enquiries = _date_filtered_enquiries(request)
+
+    serializer = EnquirySerializer(
+        enquiries,
+        many=True
+    )
+
+    return Response({
+        "success": True,
+        "data": serializer.data
+    })
+
+
+# ─────────────────────────────────────────────────────────────
+# FOLLOWUP LIST + CREATE
+# ─────────────────────────────────────────────────────────────
+
+@api_view(["GET", "POST"])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def followup_view(request, enquiry_id):
+
+    try:
+        enquiry = Enquiry.objects.get(
+            enquiry_id=enquiry_id
+        )
+
+    except Enquiry.DoesNotExist:
+        return Response(
+            {
+                "success": False,
+                "error": "Enquiry not found"
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+
+        follow_ups = enquiry.follow_ups.all().order_by(
+            "-followup_date"
+        )
+
+        serializer = FollowUpSerializer(
+            follow_ups,
+            many=True
+        )
+
+        return Response({
+            "success": True,
+            "data": serializer.data
+        })
+
+    # POST
+
+    employee_id = get_employee_id(request)
+
+    data = request.data.copy()
+
+    data["enquiry"] = enquiry_id
+
+    data["created_by"] = employee_id
+    data["created_date"] = timezone.now()
+
+    data["lastmodified_by"] = employee_id
+    data["lastmodified_date"] = timezone.now()
+
+    serializer = FollowUpSerializer(data=data)
+
+    if serializer.is_valid():
+
+        serializer.save()
+
+        return Response(
+            {
+                "success": True,
+                "message": "Follow-up created successfully",
+                "data": serializer.data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    return Response(
+        {
+            "success": False,
+            "errors": serializer.errors
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# FOLLOWUP DETAIL
+# ─────────────────────────────────────────────────────────────
+
+@api_view(["GET", "PUT", "DELETE"])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def followup_detail_view(
+    request,
+    enquiry_id,
+    followup_id
+):
+
+    try:
+        enquiry = Enquiry.objects.get(
+            enquiry_id=enquiry_id
+        )
+
+        follow_up = enquiry.follow_ups.get(
+            followup_id=followup_id
+        )
+
+    except Enquiry.DoesNotExist:
+        return Response(
+            {
+                "success": False,
+                "error": "Enquiry not found"
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    except FollowUp.DoesNotExist:
+        return Response(
+            {
+                "success": False,
+                "error": "Follow-up not found"
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # GET
+
+    if request.method == "GET":
+
+        serializer = FollowUpSerializer(
+            follow_up
+        )
+
+        return Response({
+            "success": True,
+            "data": serializer.data
+        })
+
+    # PUT
+
+    elif request.method == "PUT":
+
+        employee_id = get_employee_id(request)
+
+        data = request.data.copy()
+
+        data["enquiry"] = enquiry_id
+
+        data["lastmodified_by"] = employee_id
+        data["lastmodified_date"] = timezone.now()
+
+        serializer = FollowUpSerializer(
+            follow_up,
+            data=data,
+            partial=True
+        )
+
+        if serializer.is_valid():
+
+            serializer.save()
+
+            return Response(
+                {
+                    "success": True,
+                    "message": "Follow-up updated successfully",
+                    "data": serializer.data,
+                }
+            )
+
+        return Response(
+            {
+                "success": False,
+                "errors": serializer.errors
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # DELETE
+
+    elif request.method == "DELETE":
+
+        follow_up.delete()
+
+        return Response(
+            {
+                "success": True,
+                "message": "Follow-up deleted successfully"
+            }
+        )

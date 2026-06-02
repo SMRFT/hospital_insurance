@@ -15,6 +15,11 @@ PAGE_MAPPING = {
   r'^/_b_a_c_k_e_n_d/Insurance/other_records/refund_approval_update/?(\?.*)?$': 'SIN-P-RAU',
   r'^/_b_a_c_k_e_n_d/Insurance/other_records/collected_finalapproved/?(\?.*)?$': 'SIN-P-CF',
 
+  r'^/_b_a_c_k_e_n_d/Insurance/enquiry/?(\?.*)?$': 'SIN-P-ENQ',
+  r'^/_b_a_c_k_e_n_d/Insurance/enquiry_list/?(\?.*)?$': 'SIN-P-ENQL',
+  r'^/_b_a_c_k_e_n_d/Insurance/enquiry/\d+/follow_ups/?(\?.*)?$': 'SIN-P-FU',
+  r'^/_b_a_c_k_e_n_d/Insurance/enquiry/\d+/follow_ups/\d+/?(\?.*)?$': 'SIN-P-FUA',
+
   
 
   'get_insurance_companies/': 'SIN-P-GIC',
