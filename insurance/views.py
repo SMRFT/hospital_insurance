@@ -1265,7 +1265,7 @@ def enquiry_view(request):
     employee_id = get_employee_id(request)
     print("Creating enquiry by employee:", employee_id)
 
-    data = request.data.copy()
+    data = request.data
 
     data["created_by"] = employee_id
     data["created_date"] = timezone.now()
@@ -1364,9 +1364,6 @@ def followup_view(request, enquiry_id):
 
     data["created_by"] = employee_id
     data["created_date"] = timezone.now()
-
-    data["lastmodified_by"] = employee_id
-    data["lastmodified_date"] = timezone.now()
 
     serializer = FollowUpSerializer(data=data)
 
