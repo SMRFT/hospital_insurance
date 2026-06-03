@@ -3,6 +3,28 @@ from django.contrib.auth import authenticate
 from bson import ObjectId
 from django.core.validators import FileExtensionValidator
 from datetime import date, datetime
+from pymongo import MongoClient
+import os
+
+def get_employee_name_by_id(employee_id):
+    """Get employee name from Global database by employee ID"""
+    try:
+        mongo_url = os.getenv("GLOBAL_DB_HOST")
+        client = MongoClient(mongo_url)
+        db = client["Global"]
+        collection = db["backend_diagnostics_profile"]
+        
+        employee = collection.find_one({"employeeId": str(employee_id)})
+        
+        if employee:
+            return employee.get('employeeName', str(employee_id))
+        return str(employee_id)
+    except Exception as e:
+        print(f"Error fetching employee name: {str(e)}")
+        return str(employee_id)
+    finally:
+        if 'client' in locals():
+            client.close()
 
 class ObjectIdField(serializers.Field):
     def to_representation(self, value):
@@ -36,13 +58,33 @@ class InsuranceSerializer(serializers.ModelSerializer):
 
 from .models import Enquiry, FollowUp
 class FollowUpSerializer(serializers.ModelSerializer):
-    """Serialize FollowUp with enquiry relationship."""
-    enquiry_id = serializers.IntegerField(source='enquiry.enquiry_id', read_only=True)
-    
+    enquiry_id = serializers.IntegerField(
+        source='enquiry.enquiry_id',
+        read_only=True
+    )
+
+    created_by_name = serializers.SerializerMethodField()
+
     class Meta:
         model = FollowUp
-        fields = ["followup_id", "enquiry", "enquiry_id", "followup_date", "followup_Remarks"]
+        fields = [
+            "followup_id",
+            "enquiry",
+            "enquiry_id",
+            "followup_date",
+            "followup_Remarks",
+            "created_by",
+            "created_by_name",
+            "created_date",
+            "lastmodified_by",
+            "lastmodified_date"
+        ]
         read_only_fields = ["followup_id", "enquiry_id"]
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return get_employee_name_by_id(obj.created_by)
+        return None
     
     def to_representation(self, instance):
         """Return enquiry_id in the response."""
@@ -52,8 +94,9 @@ class FollowUpSerializer(serializers.ModelSerializer):
 
 
 class EnquirySerializer(serializers.ModelSerializer):
-    """Serialize Enquiry with nested follow_ups."""
     follow_ups = FollowUpSerializer(many=True, read_only=True)
+
+    created_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Enquiry
@@ -67,9 +110,19 @@ class EnquirySerializer(serializers.ModelSerializer):
             "insuranceName",
             "specificInsuranceCompany",
             "reasonForApproach",
+            "created_by",
+            "created_by_name",
+            "created_date",
+            "lastmodified_by",
+            "lastmodified_date",
             "follow_ups",
         ]
         read_only_fields = ["enquiry_id"]
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return get_employee_name_by_id(obj.created_by)
+        return None
       
 
 
