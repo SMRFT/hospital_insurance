@@ -18,7 +18,7 @@ class DaycareSerializer(serializers.ModelSerializer):
     class Meta:
         model = Daycare
         fields = '__all__' 
-        
+
 
 #Insurance Serializer
 from .models import Insurance
@@ -34,7 +34,43 @@ class InsuranceSerializer(serializers.ModelSerializer):
         return value
 
 
+from .models import Enquiry, FollowUp
+class FollowUpSerializer(serializers.ModelSerializer):
+    """Serialize FollowUp with enquiry relationship."""
+    enquiry_id = serializers.IntegerField(source='enquiry.enquiry_id', read_only=True)
+    
+    class Meta:
+        model = FollowUp
+        fields = ["followup_id", "enquiry", "enquiry_id", "followup_date", "followup_Remarks"]
+        read_only_fields = ["followup_id", "enquiry_id"]
+    
+    def to_representation(self, instance):
+        """Return enquiry_id in the response."""
+        ret = super().to_representation(instance)
+        ret['enquiry_id'] = instance.enquiry.enquiry_id
+        return ret
 
+
+class EnquirySerializer(serializers.ModelSerializer):
+    """Serialize Enquiry with nested follow_ups."""
+    follow_ups = FollowUpSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Enquiry
+        fields = [
+            "enquiry_id",
+            "date",
+            "ipNumber",
+            "opNumber",
+            "patientName",
+            "phoneNumber",
+            "insuranceName",
+            "specificInsuranceCompany",
+            "reasonForApproach",
+            "follow_ups",
+        ]
+        read_only_fields = ["enquiry_id"]
+      
 
 
 class OtherRecordSerializer(serializers.Serializer):
@@ -70,4 +106,3 @@ class OtherRecordSerializer(serializers.Serializer):
             return value.isoformat()
         
         return value
-    
