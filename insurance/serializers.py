@@ -108,6 +108,7 @@ class EnquirySerializer(serializers.ModelSerializer):
             "patientName",
             "phoneNumber",
             "insuranceName",
+            "treatment",
             "specificInsuranceCompany",
             "reasonForApproach",
             "created_by",
