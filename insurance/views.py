@@ -35,6 +35,24 @@ from .serializers import InsuranceSerializer , DaycareSerializer , OtherRecordSe
 
 mongo_uri = os.getenv("GLOBAL_DB_HOST")
 
+# Shared MongoClient pool to prevent socket leaks and latency
+_mongo_client_pool = None
+
+def get_mongo_client():
+    global _mongo_client_pool
+    if _mongo_client_pool is None:
+        _mongo_client_pool = MongoClient(mongo_uri)
+    return _mongo_client_pool
+
+def get_insurance_db():
+    return get_mongo_client()["Insurance"]
+
+def get_global_db():
+    return get_mongo_client()["Global"]
+
+def get_er_billing_db():
+    return get_mongo_client()["ER_Billing"]
+
 # Insurance view
 # views.py
 @api_view(['GET', 'POST'])
@@ -42,8 +60,7 @@ mongo_uri = os.getenv("GLOBAL_DB_HOST")
 @permission_classes([HasRolePermission])
 def insurance(request):
     try:
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
+        db = get_insurance_db()
         fs = GridFS(db)
 
         # Extract employee_id from request header/body
@@ -170,8 +187,7 @@ import mimetypes
 @csrf_exempt
 @permission_classes([HasRolePermission])
 def serve_file(request, file_id):
-    client = MongoClient(mongo_uri)
-    db = client["Insurance"]
+    db = get_insurance_db()
     fs = GridFS(db)
 
     try:
@@ -206,9 +222,7 @@ def serve_file(request, file_id):
 @permission_classes([HasRolePermission])
 def submit_daycare(request):
     # Connect to the MongoDB instance
-
-    client = MongoClient(mongo_uri)
-    db = client["Insurance"]         
+    db = get_insurance_db()
     fs = GridFS(db)     
 
     if request.method == 'POST':
@@ -281,8 +295,7 @@ def insurance_update_combined(request, identifier):
             raise Insurance.DoesNotExist(f"No record found for identifier {identifier} and date {update_date}")
 
         # Connect to MongoDB GridFS
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
+        db = get_insurance_db()
         fs = GridFS(db)
 
         # File handling
@@ -383,8 +396,7 @@ def insurance_update_combined(request, identifier):
 def get_insurance_companies(request):
     try:
         # MongoDB connection
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
+        db = get_insurance_db()
         collection = db["insurance_company"]
 
         # Fetch all documents
@@ -408,25 +420,31 @@ def convert_dates_to_strings(data):
         return data
 
 
-def get_employee_name_by_id(employee_id):
-    """Get employee name from Global database by employee ID"""
+def get_employee_name_by_id(employee_id, db=None, cache=None):
+    """Get employee name from Global database by employee ID, with connection reuse and optional caching"""
+    if employee_id is None:
+        return ""
+    employee_id_str = str(employee_id).strip()
+    if not employee_id_str:
+        return ""
+
+    if cache is not None and employee_id_str in cache:
+        return cache[employee_id_str]
+
     try:
-        mongo_url = os.getenv("GLOBAL_DB_HOST")
-        client = MongoClient(mongo_url)
-        db = client["Global"]
+        if db is None:
+            db = get_global_db()
         collection = db["backend_diagnostics_profile"]
         
-        employee = collection.find_one({"employeeId": str(employee_id)})
+        employee = collection.find_one({"employeeId": employee_id_str})
         
-        if employee:
-            return employee.get('employeeName', str(employee_id))
-        return str(employee_id)
+        name = employee.get('employeeName', employee_id_str) if employee else employee_id_str
+        if cache is not None:
+            cache[employee_id_str] = name
+        return name
     except Exception as e:
-        print(f"Error fetching employee name: {str(e)}")
-        return str(employee_id)
-    finally:
-        if 'client' in locals():
-            client.close()
+        logger.error(f"Error fetching employee name for {employee_id_str}: {str(e)}")
+        return employee_id_str
 
 
 def check_previous_day_final_approval(collection, record_date):
@@ -477,8 +495,7 @@ def other_record_view(request):
     PUT: Update record including status changes and approved_by
     """
     try:
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
+        db = get_insurance_db()
         collection = db["insurance_otherrecord"]
 
         # Get employee ID from request
@@ -501,6 +518,26 @@ def other_record_view(request):
             records = list(collection.find(query))
             processed_records = []
 
+            # Bulk fetch unique employee names in a single query
+            employee_ids = set()
+            for record in records:
+                for field in ['created_by', 'approved_by', 'final_approved_by', 'refund_approved_by']:
+                    val = record.get(field)
+                    if val:
+                        employee_ids.add(str(val).strip())
+            
+            name_cache = {}
+            global_db = get_global_db()
+            if employee_ids:
+                try:
+                    profile_col = global_db["backend_diagnostics_profile"]
+                    profiles = list(profile_col.find({"employeeId": {"$in": list(employee_ids)}}))
+                    for p in profiles:
+                        emp_id = str(p.get("employeeId")).strip()
+                        name_cache[emp_id] = p.get("employeeName", emp_id)
+                except Exception as ex:
+                    logger.error(f"Error bulk fetching employee names in other_record_view: {ex}")
+
             for record in records:
                 if record.get('payment_details'):
                     filtered_payments = []
@@ -522,13 +559,13 @@ def other_record_view(request):
                         
                         # Get employee names for display
                         if record_copy.get('created_by'):
-                            record_copy['created_by_name'] = get_employee_name_by_id(record_copy['created_by'])
+                            record_copy['created_by_name'] = get_employee_name_by_id(record_copy['created_by'], db=global_db, cache=name_cache)
                         if record_copy.get('approved_by'):
-                            record_copy['approved_by_name'] = get_employee_name_by_id(record_copy['approved_by'])
+                            record_copy['approved_by_name'] = get_employee_name_by_id(record_copy['approved_by'], db=global_db, cache=name_cache)
                         if record_copy.get('final_approved_by'):
-                            record_copy['final_approved_by_name'] = get_employee_name_by_id(record_copy['final_approved_by'])
+                            record_copy['final_approved_by_name'] = get_employee_name_by_id(record_copy['final_approved_by'], db=global_db, cache=name_cache)
                         if record_copy.get('refund_approved_by'):
-                            record_copy['refund_approved_by_name'] = get_employee_name_by_id(record_copy['refund_approved_by'])
+                            record_copy['refund_approved_by_name'] = get_employee_name_by_id(record_copy['refund_approved_by'], db=global_db, cache=name_cache)
                         
                         processed_records.append(record_copy)
 
@@ -641,20 +678,21 @@ def other_record_view(request):
 
             if update_data:
                 update_result = collection.update_one(
-                    {"_id": object_id},
-                    {"$set": update_data}
+                     {"_id": object_id},
+                     {"$set": update_data}
                 )
 
                 if update_result.modified_count > 0:
                     updated_record = collection.find_one({"_id": object_id})
                     
                     # Get employee names for display
+                    global_db = get_global_db()
                     if updated_record.get('approved_by'):
-                        updated_record['approved_by_name'] = get_employee_name_by_id(updated_record['approved_by'])
+                        updated_record['approved_by_name'] = get_employee_name_by_id(updated_record['approved_by'], db=global_db)
                     if updated_record.get('final_approved_by'):
-                        updated_record['final_approved_by_name'] = get_employee_name_by_id(updated_record['final_approved_by'])
+                        updated_record['final_approved_by_name'] = get_employee_name_by_id(updated_record['final_approved_by'], db=global_db)
                     if updated_record.get('refund_approved_by'):
-                        updated_record['refund_approved_by_name'] = get_employee_name_by_id(updated_record['refund_approved_by'])
+                        updated_record['refund_approved_by_name'] = get_employee_name_by_id(updated_record['refund_approved_by'], db=global_db)
                     
                     updated_record['id'] = str(updated_record['_id'])
                     del updated_record['_id']
@@ -667,9 +705,6 @@ def other_record_view(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    finally:
-        if 'client' in locals():
-            client.close()
 
 
 @api_view(['GET'])
@@ -681,8 +716,7 @@ def other_record_report_view(request):
     Each payment entry becomes a separate row
     """
     try:
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
+        db = get_insurance_db()
         collection = db["insurance_otherrecord"]
         
         from_date = request.GET.get('from_date')
@@ -691,6 +725,26 @@ def other_record_report_view(request):
         # Get ALL records regardless of status
         records = list(collection.find({}))
         flattened_data = []
+
+        # Bulk fetch unique employee names in a single query
+        employee_ids = set()
+        for record in records:
+            for field in ['created_by', 'approved_by', 'final_approved_by', 'refund_approved_by']:
+                val = record.get(field)
+                if val:
+                    employee_ids.add(str(val).strip())
+        
+        name_cache = {}
+        global_db = get_global_db()
+        if employee_ids:
+            try:
+                profile_col = global_db["backend_diagnostics_profile"]
+                profiles = list(profile_col.find({"employeeId": {"$in": list(employee_ids)}}))
+                for p in profiles:
+                    emp_id = str(p.get("employeeId")).strip()
+                    name_cache[emp_id] = p.get("employeeName", emp_id)
+            except Exception as ex:
+                logger.error(f"Error bulk fetching employee names in other_record_report_view: {ex}")
         
         for record in records:
             if record.get('payment_details'):
@@ -734,13 +788,13 @@ def other_record_report_view(request):
                     
                     # Get employee names for display
                     if flat_record['created_by']:
-                        flat_record['created_by_name'] = get_employee_name_by_id(flat_record['created_by'])
+                        flat_record['created_by_name'] = get_employee_name_by_id(flat_record['created_by'], db=global_db, cache=name_cache)
                     if flat_record['approved_by']:
-                        flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'])
+                        flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'], db=global_db, cache=name_cache)
                     if flat_record['final_approved_by']:
-                        flat_record['final_approved_by_name'] = get_employee_name_by_id(flat_record['final_approved_by'])
+                        flat_record['final_approved_by_name'] = get_employee_name_by_id(flat_record['final_approved_by'], db=global_db, cache=name_cache)
                     if flat_record['refund_approved_by']:
-                        flat_record['refund_approved_by_name'] = get_employee_name_by_id(flat_record['refund_approved_by'])
+                        flat_record['refund_approved_by_name'] = get_employee_name_by_id(flat_record['refund_approved_by'], db=global_db, cache=name_cache)
                     
                     flattened_data.append(flat_record)
         
@@ -750,9 +804,6 @@ def other_record_report_view(request):
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    finally:
-        if 'client' in locals():
-            client.close()
 
 
 @api_view(['GET'])
@@ -763,8 +814,7 @@ def collected_finalapproved_view(request):
     GET: Fetch all records with 'Final Approved'
     """
     try:
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
+        db = get_insurance_db()
         collection = db["insurance_otherrecord"]
         
         from_date = request.GET.get('from_date')
@@ -776,6 +826,25 @@ def collected_finalapproved_view(request):
             'is_finalapproved': True
         }))
 
+        # Bulk fetch unique employee names in a single query
+        employee_ids = set()
+        for record in records:
+            for field in ['created_by', 'approved_by', 'final_approved_by']:
+                val = record.get(field)
+                if val:
+                    employee_ids.add(str(val).strip())
+        
+        name_cache = {}
+        global_db = get_global_db()
+        if employee_ids:
+            try:
+                profile_col = global_db["backend_diagnostics_profile"]
+                profiles = list(profile_col.find({"employeeId": {"$in": list(employee_ids)}}))
+                for p in profiles:
+                    emp_id = str(p.get("employeeId")).strip()
+                    name_cache[emp_id] = p.get("employeeName", emp_id)
+            except Exception as ex:
+                logger.error(f"Error bulk fetching employee names in collected_finalapproved_view: {ex}")
         
         approval_data = []
         
@@ -817,11 +886,11 @@ def collected_finalapproved_view(request):
                     
                     # Get employee names for display
                     if flat_record['created_by']:
-                        flat_record['created_by_name'] = get_employee_name_by_id(flat_record['created_by'])
+                        flat_record['created_by_name'] = get_employee_name_by_id(flat_record['created_by'], db=global_db, cache=name_cache)
                     if flat_record['approved_by']:
-                        flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'])
+                        flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'], db=global_db, cache=name_cache)
                     if flat_record['final_approved_by']:
-                        flat_record['final_approved_by_name'] = get_employee_name_by_id(flat_record['final_approved_by'])
+                        flat_record['final_approved_by_name'] = get_employee_name_by_id(flat_record['final_approved_by'], db=global_db, cache=name_cache)
                     
                     approval_data.append(flat_record)
         
@@ -831,9 +900,6 @@ def collected_finalapproved_view(request):
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    finally:
-        if 'client' in locals():
-            client.close()
 
 
 
@@ -845,8 +911,7 @@ def overall_approval_view(request):
     GET: Fetch all records with 'Gate Pass Issued' status that are NOT yet final approved
     """
     try:
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
+        db = get_insurance_db()
         collection = db["insurance_otherrecord"]
         
         from_date = request.GET.get('from_date')
@@ -857,6 +922,26 @@ def overall_approval_view(request):
             'status': 'Collected',
             'is_approved': True
         }))
+
+        # Bulk fetch unique employee names in a single query
+        employee_ids = set()
+        for record in records:
+            for field in ['created_by', 'approved_by', 'final_approved_by']:
+                val = record.get(field)
+                if val:
+                    employee_ids.add(str(val).strip())
+        
+        name_cache = {}
+        global_db = get_global_db()
+        if employee_ids:
+            try:
+                profile_col = global_db["backend_diagnostics_profile"]
+                profiles = list(profile_col.find({"employeeId": {"$in": list(employee_ids)}}))
+                for p in profiles:
+                    emp_id = str(p.get("employeeId")).strip()
+                    name_cache[emp_id] = p.get("employeeName", emp_id)
+            except Exception as ex:
+                logger.error(f"Error bulk fetching employee names in overall_approval_view: {ex}")
         
         approval_data = []
         
@@ -898,11 +983,11 @@ def overall_approval_view(request):
                     
                     # Get employee names for display
                     if flat_record['created_by']:
-                        flat_record['created_by_name'] = get_employee_name_by_id(flat_record['created_by'])
+                        flat_record['created_by_name'] = get_employee_name_by_id(flat_record['created_by'], db=global_db, cache=name_cache)
                     if flat_record['approved_by']:
-                        flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'])
+                        flat_record['approved_by_name'] = get_employee_name_by_id(flat_record['approved_by'], db=global_db, cache=name_cache)
                     if flat_record['final_approved_by']:
-                        flat_record['final_approved_by_name'] = get_employee_name_by_id(flat_record['final_approved_by'])
+                        flat_record['final_approved_by_name'] = get_employee_name_by_id(flat_record['final_approved_by'], db=global_db, cache=name_cache)
                     
                     approval_data.append(flat_record)
         
@@ -912,9 +997,6 @@ def overall_approval_view(request):
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    finally:
-        if 'client' in locals():
-            client.close()
 
 
 @api_view(['POST'])
@@ -925,8 +1007,7 @@ def final_approval_view(request):
     POST: Update final_approved_by and final_approved_date for records with status 'Gate Pass Issued'
     """
     try:
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
+        db = get_insurance_db()
         collection = db["insurance_otherrecord"]
 
         # Get employee ID from request
@@ -978,9 +1059,6 @@ def final_approval_view(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    finally:
-        if 'client' in locals():
-            client.close()
 
 
 @api_view(['GET'])
@@ -991,8 +1069,7 @@ def refund_approval_view(request):
     GET: Fetch all records with refund amount that are NOT yet refund approved
     """
     try:
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
+        db = get_insurance_db()
         collection = db["insurance_otherrecord"]
         
         from_date = request.GET.get('from_date')
@@ -1003,6 +1080,25 @@ def refund_approval_view(request):
             'has_refund': True,
             'is_refund_approved': {'$ne': True}
         }))
+
+        # Bulk fetch unique employee names in a single query
+        employee_ids = set()
+        for record in records:
+            val = record.get('refund_approved_by')
+            if val:
+                employee_ids.add(str(val).strip())
+        
+        name_cache = {}
+        global_db = get_global_db()
+        if employee_ids:
+            try:
+                profile_col = global_db["backend_diagnostics_profile"]
+                profiles = list(profile_col.find({"employeeId": {"$in": list(employee_ids)}}))
+                for p in profiles:
+                    emp_id = str(p.get("employeeId")).strip()
+                    name_cache[emp_id] = p.get("employeeName", emp_id)
+            except Exception as ex:
+                logger.error(f"Error bulk fetching employee names in refund_approval_view: {ex}")
         
         refund_data = []
         
@@ -1038,7 +1134,7 @@ def refund_approval_view(request):
                     
                     # Get employee names for display
                     if flat_record['refund_approved_by']:
-                        flat_record['refund_approved_by_name'] = get_employee_name_by_id(flat_record['refund_approved_by'])
+                        flat_record['refund_approved_by_name'] = get_employee_name_by_id(flat_record['refund_approved_by'], db=global_db, cache=name_cache)
                     
                     refund_data.append(flat_record)
         
@@ -1048,9 +1144,6 @@ def refund_approval_view(request):
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    finally:
-        if 'client' in locals():
-            client.close()
 
 
 @api_view(['PUT'])
@@ -1061,8 +1154,7 @@ def refund_approval_update_view(request):
     PUT: Update refund_approved_by and refund_approved_date for records with refund amount
     """
     try:
-        client = MongoClient(mongo_uri)
-        db = client["Insurance"]
+        db = get_insurance_db()
         collection = db["insurance_otherrecord"]
 
         # Get employee ID from request
@@ -1113,17 +1205,13 @@ def refund_approval_update_view(request):
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    finally:
-        if 'client' in locals():
-            client.close()
 
 
 @api_view(['GET'])
 @csrf_exempt
 @permission_classes([HasRolePermission])
 def get_doctor_list(request):
-    client = MongoClient(os.getenv("GLOBAL_DB_HOST"))
-    db = client["ER_Billing"]
+    db = get_er_billing_db()
     collection = db["doctors_list"]
 
     doctors = list(collection.find({"is_active": True}, {"_id": 0}))
@@ -1134,8 +1222,7 @@ def get_doctor_list(request):
 @csrf_exempt
 @permission_classes([HasRolePermission])
 def get_treatment_list(request):
-    client = MongoClient(os.getenv("GLOBAL_DB_HOST"))
-    db = client["Insurance"]
+    db = get_insurance_db()
     collection = db["treatment_list"] 
 
     treatments = list(collection.find({"is_active": True}, {"_id": 0}))
@@ -1149,8 +1236,7 @@ def add_doctor(request):
     try:
         data = request.data
 
-        client = MongoClient(os.getenv("GLOBAL_DB_HOST"))
-        db = client["ER_Billing"]
+        db = get_er_billing_db()
         collection = db["doctors_list"]
 
         # Get employee ID from request
@@ -1184,8 +1270,7 @@ def add_treatment(request):
     try:
         data = request.data
 
-        client = MongoClient(os.getenv("GLOBAL_DB_HOST"))
-        db = client["Insurance"]
+        db = get_insurance_db()
         collection = db["treatment_list"]
 
         # Get employee ID from request

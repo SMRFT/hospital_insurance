@@ -6,25 +6,35 @@ from datetime import date, datetime
 from pymongo import MongoClient
 import os
 
+# Pooled MongoClient cache for serializers to avoid connection exhaustion and circular imports
+_mongo_client_pool = None
+
+def get_mongo_client():
+    global _mongo_client_pool
+    if _mongo_client_pool is None:
+        mongo_uri = os.getenv("GLOBAL_DB_HOST")
+        _mongo_client_pool = MongoClient(mongo_uri)
+    return _mongo_client_pool
+
 def get_employee_name_by_id(employee_id):
-    """Get employee name from Global database by employee ID"""
+    """Get employee name from Global database by employee ID, reusing pooled connection"""
+    if employee_id is None:
+        return None
+    employee_id_str = str(employee_id).strip()
+    if not employee_id_str:
+        return ""
     try:
-        mongo_url = os.getenv("GLOBAL_DB_HOST")
-        client = MongoClient(mongo_url)
-        db = client["Global"]
+        db = get_mongo_client()["Global"]
         collection = db["backend_diagnostics_profile"]
         
-        employee = collection.find_one({"employeeId": str(employee_id)})
+        employee = collection.find_one({"employeeId": employee_id_str})
         
         if employee:
-            return employee.get('employeeName', str(employee_id))
-        return str(employee_id)
+            return employee.get('employeeName', employee_id_str)
+        return employee_id_str
     except Exception as e:
         print(f"Error fetching employee name: {str(e)}")
-        return str(employee_id)
-    finally:
-        if 'client' in locals():
-            client.close()
+        return employee_id_str
 
 class ObjectIdField(serializers.Field):
     def to_representation(self, value):
