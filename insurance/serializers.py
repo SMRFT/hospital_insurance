@@ -170,3 +170,35 @@ class OtherRecordSerializer(serializers.Serializer):
             return value.isoformat()
         
         return value
+
+from .models import RTRecord, ChemoRecord
+
+import json
+
+class PassThroughJSONField(serializers.Field):
+    def to_representation(self, value):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (ValueError, TypeError):
+                return []
+        return value or []
+
+    def to_internal_value(self, data):
+        return data
+
+class RTRecordSerializer(serializers.ModelSerializer):
+    payment_details = PassThroughJSONField(required=False)
+
+    class Meta:
+        model = RTRecord
+        fields = '__all__'
+        read_only_fields = ['rt_id']
+
+class ChemoRecordSerializer(serializers.ModelSerializer):
+    payment_details = PassThroughJSONField(required=False)
+
+    class Meta:
+        model = ChemoRecord
+        fields = '__all__'
+        read_only_fields = ['chemo_id']

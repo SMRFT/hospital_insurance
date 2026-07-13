@@ -482,7 +482,8 @@ AUTH_FIELDS = [
     'auth-action-id',
     'auth-permission-id',
     'auth-allowed-action-codes',
-    'auth-allowed-branch-codes'
+    'auth-allowed-branch-codes',
+    'auth-hospital-code'
 ]
 
 @api_view(['GET', 'POST', 'PUT'])
@@ -1578,3 +1579,374 @@ def followup_detail_view(
                 "message": "Follow-up deleted successfully"
             }
         )
+
+# ─────────────────────────────────────────────────────────────
+# RT AND CHEMO RECORDS
+# ─────────────────────────────────────────────────────────────
+from .models import RTRecord, ChemoRecord
+from .serializers import RTRecordSerializer, ChemoRecordSerializer
+
+@api_view(["GET", "POST"])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def rt_record_view(request):
+    if request.method == "GET":
+        from_date = request.GET.get('from_date')
+        to_date = request.GET.get('to_date')
+        db = get_insurance_db()
+        collection = db["insurance_rtrecord"]
+        query = {}
+        if from_date and to_date:
+            try:
+                from_dt = datetime.strptime(from_date, "%Y-%m-%d")
+                to_dt = datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
+                
+                from_date_str = from_date
+                to_date_str = to_dt.strftime("%Y-%m-%d")
+                
+                query["$or"] = [
+                    {"date": {"$gte": from_dt, "$lt": to_dt}},
+                    {"date": {"$gte": from_date_str, "$lt": to_date_str}}
+                ]
+            except ValueError:
+                pass
+                
+        records = list(collection.find(query).sort("rt_id", -1))
+        records = convert_dates_to_strings(records)
+        for r in records:
+            if '_id' in r:
+                r['_id'] = str(r['_id'])
+                
+        return Response({"success": True, "data": records})
+
+    employee_id = get_employee_id(request)
+    data = request.data.copy()
+    data["created_by"] = employee_id
+    
+    # Remove auth fields and extract payment_details to avoid Djongo JSONField crash
+    for field in AUTH_FIELDS:
+        data.pop(field, None)
+    payment_details = data.pop("payment_details", [])
+    
+    # Calculate total payments and set status
+    expected_amount = 0
+    try:
+        if data.get("amount_to_be_paid"):
+            expected_amount = float(data.get("amount_to_be_paid"))
+    except (ValueError, TypeError):
+        pass
+
+    total_paid = 0
+    for payment in payment_details:
+        try:
+            if payment.get("amount"):
+                total_paid += float(payment.get("amount"))
+        except (ValueError, TypeError):
+            pass
+
+    if total_paid == 0:
+        status_val = "Pending"
+    elif total_paid >= expected_amount:
+        status_val = "Paid"
+    else:
+        status_val = "Partially Paid"
+    
+    # Create record manually with PyMongo to avoid Djongo serializer crashes
+    db = get_insurance_db()
+    collection = db["insurance_rtrecord"]
+    
+    # Generate ID
+    last = collection.find_one({}, sort=[("rt_id", -1)])
+    new_id = (last["rt_id"] + 1) if last else 1
+    
+    insert_data = {
+        "rt_id": new_id,
+        "created_by": employee_id,
+        "created_date": datetime.now().isoformat(),
+        "payment_details": payment_details,
+        "status": status_val,
+        "patient_name": data.get("patient_name", ""),
+        "insurance_type": data.get("insurance_type", ""),
+        "specificInsuranceCompany": data.get("specificInsuranceCompany", ""),
+        "amount_to_be_paid": data.get("amount_to_be_paid", "")
+    }
+    
+    # Process dates
+    if data.get("date"):
+        try:
+            insert_data["date"] = datetime.strptime(str(data["date"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+    if data.get("date_of_admission"):
+        try:
+            insert_data["date_of_admission"] = datetime.strptime(str(data["date_of_admission"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+    if data.get("date_of_discharge"):
+        try:
+            insert_data["date_of_discharge"] = datetime.strptime(str(data["date_of_discharge"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+            
+    collection.insert_one(insert_data)
+    
+    # Return stringified ID in response
+    insert_data["rt_id"] = new_id
+    if "_id" in insert_data:
+        insert_data["_id"] = str(insert_data["_id"])
+        
+    return Response({"success": True, "message": "RT Record created successfully", "data": insert_data}, status=status.HTTP_201_CREATED)
+
+@api_view(["PUT"])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def rt_record_update_view(request, pk):
+    try:
+        pk = int(pk)
+    except ValueError:
+        pass
+
+    db = get_insurance_db()
+    collection = db["insurance_rtrecord"]
+    
+    record = collection.find_one({"rt_id": pk})
+    if not record:
+        return Response({"success": False, "error": "RT Record not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+    employee_id = get_employee_id(request)
+    
+    # Prepare update data from request
+    update_data = {k: v for k, v in request.data.items() if k not in AUTH_FIELDS}
+    update_data["lastmodified_by"] = employee_id
+    update_data["lastmodified_date"] = datetime.now().isoformat()
+    
+    # Ensure dates are properly formatted
+    if "date" in update_data and update_data["date"]:
+        try:
+            update_data["date"] = datetime.strptime(str(update_data["date"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+    if "date_of_admission" in update_data and update_data["date_of_admission"]:
+        try:
+            update_data["date_of_admission"] = datetime.strptime(str(update_data["date_of_admission"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+    if "date_of_discharge" in update_data and update_data["date_of_discharge"]:
+        try:
+            update_data["date_of_discharge"] = datetime.strptime(str(update_data["date_of_discharge"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+            
+    # Keep payment details as list if not in update_data
+    if "payment_details" not in update_data:
+        update_data["payment_details"] = record.get("payment_details", [])
+        
+    # Calculate total payments and set status
+    expected_amount = 0
+    try:
+        if update_data.get("amount_to_be_paid"):
+            expected_amount = float(update_data.get("amount_to_be_paid"))
+    except (ValueError, TypeError):
+        pass
+
+    total_paid = 0
+    for payment in update_data.get("payment_details", []):
+        try:
+            if payment.get("amount"):
+                total_paid += float(payment.get("amount"))
+        except (ValueError, TypeError):
+            pass
+
+    if total_paid == 0:
+        update_data["status"] = "Pending"
+    elif total_paid >= expected_amount:
+        update_data["status"] = "Paid"
+    else:
+        update_data["status"] = "Partially Paid"
+        
+    collection.update_one({"rt_id": pk}, {"$set": update_data})
+    
+    return Response({"success": True, "message": "RT Record updated successfully"})
+
+@api_view(["GET", "POST"])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def chemo_record_view(request):
+    if request.method == "GET":
+        from_date = request.GET.get('from_date')
+        to_date = request.GET.get('to_date')
+        db = get_insurance_db()
+        collection = db["insurance_chemorecord"]
+        query = {}
+        if from_date and to_date:
+            try:
+                from_dt = datetime.strptime(from_date, "%Y-%m-%d")
+                to_dt = datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
+                
+                from_date_str = from_date
+                to_date_str = to_dt.strftime("%Y-%m-%d")
+                
+                query["$or"] = [
+                    {"date": {"$gte": from_dt, "$lt": to_dt}},
+                    {"date": {"$gte": from_date_str, "$lt": to_date_str}}
+                ]
+            except ValueError:
+                pass
+                
+        records = list(collection.find(query).sort("chemo_id", -1))
+        records = convert_dates_to_strings(records)
+        for r in records:
+            if '_id' in r:
+                r['_id'] = str(r['_id'])
+                
+        return Response({"success": True, "data": records})
+
+    employee_id = get_employee_id(request)
+    data = request.data.copy()
+    data["created_by"] = employee_id
+    
+    # Remove auth fields and extract payment_details to avoid Djongo JSONField crash
+    for field in AUTH_FIELDS:
+        data.pop(field, None)
+    payment_details = data.pop("payment_details", [])
+    
+    # Calculate total payments and set status
+    expected_amount = 0
+    try:
+        if data.get("amount_to_be_paid"):
+            expected_amount = float(data.get("amount_to_be_paid"))
+    except (ValueError, TypeError):
+        pass
+
+    total_paid = 0
+    for payment in payment_details:
+        try:
+            if payment.get("amount"):
+                total_paid += float(payment.get("amount"))
+        except (ValueError, TypeError):
+            pass
+
+    if total_paid == 0:
+        status_val = "Pending"
+    elif total_paid >= expected_amount:
+        status_val = "Paid"
+    else:
+        status_val = "Partially Paid"
+    
+    # Create record manually with PyMongo to avoid Djongo serializer crashes
+    db = get_insurance_db()
+    collection = db["insurance_chemorecord"]
+    
+    # Generate ID
+    last = collection.find_one({}, sort=[("chemo_id", -1)])
+    new_id = (last["chemo_id"] + 1) if last else 1
+    
+    insert_data = {
+        "chemo_id": new_id,
+        "created_by": employee_id,
+        "created_date": datetime.now().isoformat(),
+        "payment_details": payment_details,
+        "status": status_val,
+        "patient_name": data.get("patient_name", ""),
+        "insurance_type": data.get("insurance_type", ""),
+        "specificInsuranceCompany": data.get("specificInsuranceCompany", ""),
+        "amount_to_be_paid": data.get("amount_to_be_paid", ""),
+        "medicine_details": data.get("medicine_details", "")
+    }
+    
+    # Process dates
+    if data.get("date"):
+        try:
+            insert_data["date"] = datetime.strptime(str(data["date"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+    if data.get("date_of_admission"):
+        try:
+            insert_data["date_of_admission"] = datetime.strptime(str(data["date_of_admission"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+    if data.get("date_of_discharge"):
+        try:
+            insert_data["date_of_discharge"] = datetime.strptime(str(data["date_of_discharge"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+            
+    collection.insert_one(insert_data)
+    
+    # Return stringified ID in response
+    insert_data["chemo_id"] = new_id
+    if "_id" in insert_data:
+        insert_data["_id"] = str(insert_data["_id"])
+        
+    return Response({"success": True, "message": "Chemo Record created successfully", "data": insert_data}, status=status.HTTP_201_CREATED)
+
+@api_view(["PUT"])
+@csrf_exempt
+@permission_classes([HasRolePermission])
+def chemo_record_update_view(request, pk):
+    try:
+        pk = int(pk)
+    except ValueError:
+        pass
+
+    db = get_insurance_db()
+    collection = db["insurance_chemorecord"]
+    
+    record = collection.find_one({"chemo_id": pk})
+    if not record:
+        return Response({"success": False, "error": "Chemo Record not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+    employee_id = get_employee_id(request)
+    
+    # Prepare update data from request
+    update_data = {k: v for k, v in request.data.items() if k not in AUTH_FIELDS}
+    update_data["lastmodified_by"] = employee_id
+    update_data["lastmodified_date"] = datetime.now().isoformat()
+    
+    # Ensure dates are properly formatted
+    if "date" in update_data and update_data["date"]:
+        try:
+            update_data["date"] = datetime.strptime(str(update_data["date"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+    if "date_of_admission" in update_data and update_data["date_of_admission"]:
+        try:
+            update_data["date_of_admission"] = datetime.strptime(str(update_data["date_of_admission"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+    if "date_of_discharge" in update_data and update_data["date_of_discharge"]:
+        try:
+            update_data["date_of_discharge"] = datetime.strptime(str(update_data["date_of_discharge"])[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+            
+    # Keep payment details as list if not in update_data
+    if "payment_details" not in update_data:
+        update_data["payment_details"] = record.get("payment_details", [])
+        
+    # Calculate total payments and set status
+    expected_amount = 0
+    try:
+        if update_data.get("amount_to_be_paid"):
+            expected_amount = float(update_data.get("amount_to_be_paid"))
+    except (ValueError, TypeError):
+        pass
+
+    total_paid = 0
+    for payment in update_data.get("payment_details", []):
+        try:
+            if payment.get("amount"):
+                total_paid += float(payment.get("amount"))
+        except (ValueError, TypeError):
+            pass
+
+    if total_paid == 0:
+        update_data["status"] = "Pending"
+    elif total_paid >= expected_amount:
+        update_data["status"] = "Paid"
+    else:
+        update_data["status"] = "Partially Paid"
+        
+    collection.update_one({"chemo_id": pk}, {"$set": update_data})
+    
+    return Response({"success": True, "message": "Chemo Record updated successfully"})

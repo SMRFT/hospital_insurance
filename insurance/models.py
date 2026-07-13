@@ -159,3 +159,45 @@ class FollowUp(AuditModel):
  
     def __str__(self):
         return f"FollowUp {self.followup_id} → Enquiry {self.enquiry_id}"
+
+# New Models for RT and Chemo
+class RTRecord(AuditModel):
+    rt_id = models.IntegerField(primary_key=True)
+    date = models.DateField(blank=True, null=True)
+    patient_name = models.CharField(max_length=255)
+    date_of_admission = models.DateField(blank=True, null=True)
+    date_of_discharge = models.DateField(blank=True, null=True)
+    insurance_type = models.CharField(max_length=255, blank=True, null=True)
+    amount_to_be_paid = models.CharField(max_length=255, blank=True, null=True)
+    payment_details = models.JSONField(default=list)
+    status = models.CharField(max_length=50, default='Pending')
+
+    def __str__(self):
+        return self.patient_name
+
+    def save(self, *args, **kwargs):
+        if self.rt_id is None:
+            last = RTRecord.objects.order_by('-rt_id').first()
+            self.rt_id = (last.rt_id + 1) if last else 1
+        super().save(*args, **kwargs)
+
+class ChemoRecord(AuditModel):
+    chemo_id = models.IntegerField(primary_key=True)
+    date = models.DateField(blank=True, null=True)
+    patient_name = models.CharField(max_length=255)
+    date_of_admission = models.DateField(blank=True, null=True)
+    date_of_discharge = models.DateField(blank=True, null=True)
+    insurance_type = models.CharField(max_length=255, blank=True, null=True)
+    amount_to_be_paid = models.CharField(max_length=255, blank=True, null=True)
+    medicine_details = models.TextField(blank=True, null=True)
+    payment_details = models.JSONField(default=list)
+    status = models.CharField(max_length=50, default='Pending')
+
+    def __str__(self):
+        return self.patient_name
+
+    def save(self, *args, **kwargs):
+        if self.chemo_id is None:
+            last = ChemoRecord.objects.order_by('-chemo_id').first()
+            self.chemo_id = (last.chemo_id + 1) if last else 1
+        super().save(*args, **kwargs)

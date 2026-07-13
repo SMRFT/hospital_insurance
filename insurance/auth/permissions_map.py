@@ -19,9 +19,11 @@ PAGE_MAPPING = {
   r'^/_b_a_c_k_e_n_d/Insurance/enquiry_list/?(\?.*)?$': 'SIN-P-ENQL',
   r'^/_b_a_c_k_e_n_d/Insurance/enquiry/\d+/follow_ups/?(\?.*)?$': 'SIN-P-FU',
   r'^/_b_a_c_k_e_n_d/Insurance/enquiry/\d+/follow_ups/\d+/?(\?.*)?$': 'SIN-P-FUA',
-
+  r'^/_b_a_c_k_e_n_d/Insurance/rt_records/?(\?.*)?$': 'SIN-API-OR',
+  r'^/_b_a_c_k_e_n_d/Insurance/rt_records/\d+/?(\?.*)?$': 'SIN-API-OR',
+  r'^/_b_a_c_k_e_n_d/Insurance/chemo_records/?(\?.*)?$': 'SIN-API-OR',
+  r'^/_b_a_c_k_e_n_d/Insurance/chemo_records/\d+/?(\?.*)?$': 'SIN-API-OR',
   
-
   'get_insurance_companies/': 'SIN-P-GIC',
   'insurance/serve_file/<str:file_id>/': 'SIN-API-SF',
   'insurance/update/': 'SIN-API-FU',
@@ -32,7 +34,11 @@ PAGE_MAPPING = {
   'other_records/refund_approval/': 'SIN-P-RA',
   'other_records/final_approval/': 'SIN-P-FA',
   'other_records/refund_approval_update/': 'SIN-P-RAU',
-  'other_records/collected_finalapproved/': 'SIN-P-CF'
+  'other_records/collected_finalapproved/': 'SIN-P-CF',
+  'rt_records/': 'SIN-R-RT',
+  'rt_records/<int:pk>/': 'SIN-R-RT',
+  'chemo_records/': 'SIN-R-CHEMO',
+  'chemo_records/<int:pk>/': 'SIN-R-CHEMO'
 }
 
 PAGE_ACTION_MAPPING = {
