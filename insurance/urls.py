@@ -23,7 +23,7 @@ urlpatterns = [
     path("enquiry/<int:enquiry_id>/follow_ups/", views.followup_view, name="followup_list"),
     path("enquiry/<int:enquiry_id>/follow_ups/<int:followup_id>/",views.followup_detail_view,name="followup_detail"),
     path("rt_records/", views.rt_record_view, name="rt_records"),
-    path("rt_records/<int:pk>/", views.rt_record_update_view, name="rt_record_update"),
+    path("rtrecords/<int:pk>/", views.rt_record_update_view, name="rt_record_update"),
     path("chemo_records/", views.chemo_record_view, name="chemo_records"),
-    path("chemo_records/<int:pk>/", views.chemo_record_update_view, name="chemo_record_update"),
+    path("chemorecords/<int:pk>/", views.chemo_record_update_view, name="chemo_record_update"),
 ]

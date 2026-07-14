@@ -1,5 +1,5 @@
 PAGE_MAPPING = {
-  '/_b_a_c_k_e_n_d/Insurance/get_insurance_companies/': 'SIN-P-GIC',
+  '/_b_a_c_k_e_n_d/Insurance/get_insurance_companies/': 'SIN-API-GIC',
   '/_b_a_c_k_e_n_d/Insurance/insurance/serve_file/<str:file_id>/': 'SIN-API-SF',
   '/_b_a_c_k_e_n_d/Insurance/insurance/update/.*/': 'SIN-API-FU',
   r'^/_b_a_c_k_e_n_d/Insurance/other_records/?(\?.*)?$': 'SIN-API-OR',
@@ -19,10 +19,10 @@ PAGE_MAPPING = {
   r'^/_b_a_c_k_e_n_d/Insurance/enquiry_list/?(\?.*)?$': 'SIN-P-ENQL',
   r'^/_b_a_c_k_e_n_d/Insurance/enquiry/\d+/follow_ups/?(\?.*)?$': 'SIN-P-FU',
   r'^/_b_a_c_k_e_n_d/Insurance/enquiry/\d+/follow_ups/\d+/?(\?.*)?$': 'SIN-P-FUA',
-  r'^/_b_a_c_k_e_n_d/Insurance/rt_records/?(\?.*)?$': 'SIN-API-OR',
-  r'^/_b_a_c_k_e_n_d/Insurance/rt_records/\d+/?(\?.*)?$': 'SIN-API-OR',
-  r'^/_b_a_c_k_e_n_d/Insurance/chemo_records/?(\?.*)?$': 'SIN-API-OR',
-  r'^/_b_a_c_k_e_n_d/Insurance/chemo_records/\d+/?(\?.*)?$': 'SIN-API-OR',
+  r'^/_b_a_c_k_e_n_d/Insurance/rt_records/?(\?.*)?$': 'SIN-P-RT',
+  r'^/_b_a_c_k_e_n_d/Insurance/rtrecords/\d+/?(\?.*)?$': 'SIN-P-RTA',
+  r'^/_b_a_c_k_e_n_d/Insurance/chemo_records/?(\?.*)?$': 'SIN-P-CHE',
+  r'^/_b_a_c_k_e_n_d/Insurance/chemorecords/\d+/?(\?.*)?$': 'SIN-P-CHEA',
   
   'get_insurance_companies/': 'SIN-P-GIC',
   'insurance/serve_file/<str:file_id>/': 'SIN-API-SF',
