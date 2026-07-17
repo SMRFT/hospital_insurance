@@ -51,6 +51,12 @@ class Insurance(AuditModel):
     radiotherapyCycles = models.CharField(max_length=255, blank=True, null=True)
     remarks = models.TextField(blank=True, null=True)
     pendingAmount = models.CharField(max_length=255, blank=True, null=True)
+    voucherNumber = models.CharField(max_length=255, blank=True, null=True)
+    referral = models.CharField(max_length=255, blank=True, null=True)
+    grossAmount = models.CharField(max_length=255, blank=True, null=True)
+    taxAmount = models.CharField(max_length=255, blank=True, null=True)
+    netAmount = models.CharField(max_length=255, blank=True, null=True)
+    gst = models.CharField(max_length=255, blank=True, null=True)
     editHistory = models.JSONField(default=list)
 
 
