@@ -22,6 +22,7 @@ class Insurance(AuditModel):
     patient_uhid = models.CharField(max_length=255, blank=True, null=True)
     patient_name = models.CharField(max_length=255, blank=True, null=True)
     billNumber = models.CharField(max_length=255, blank=True, null=True)
+    ctseType = models.CharField(max_length=50, blank=True, null=True)
     date = models.CharField(max_length=255, blank=True, null=True)
     companyName = models.CharField(max_length=255, blank=True, null=True)
     specificInsuranceCompany = models.CharField(max_length=255, blank=True, null=True)
@@ -103,9 +104,14 @@ class OtherRecord(AuditModel):
     final_approved_by = models.CharField(max_length=500, blank=True, null=True)
     final_approved_date = models.DateTimeField(blank=True, null=True)
 
+    is_refund_initiated = models.BooleanField(default=False)
+    refund_initiated_by = models.CharField(max_length=500, blank=True, null=True)
+    refund_initiated_date = models.DateTimeField(blank=True, null=True)
+
     is_refund_approved = models.BooleanField(default=False)
     refund_approved_by = models.CharField(max_length=500, blank=True, null=True)
     refund_approved_date = models.DateTimeField(blank=True, null=True)
+    editHistory = models.JSONField(default=list)
 
     def __str__(self):
         return f"{self.patient_name} - {self.patient_uhid}"
@@ -177,6 +183,7 @@ class RTRecord(AuditModel):
     amount_to_be_paid = models.CharField(max_length=255, blank=True, null=True)
     payment_details = models.JSONField(default=list)
     status = models.CharField(max_length=50, default='Pending')
+    editHistory = models.JSONField(default=list)
 
     def __str__(self):
         return self.patient_name
@@ -198,6 +205,7 @@ class ChemoRecord(AuditModel):
     medicine_details = models.TextField(blank=True, null=True)
     payment_details = models.JSONField(default=list)
     status = models.CharField(max_length=50, default='Pending')
+    editHistory = models.JSONField(default=list)
 
     def __str__(self):
         return self.patient_name

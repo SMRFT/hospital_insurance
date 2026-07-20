@@ -136,41 +136,57 @@ def insurance(request):
             return Response({"error": "Invalid data", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
         elif request.method == 'GET':
-            insurances = Insurance.objects.all()
+            collection = db["insurance_insurance"]
+            query = {}
 
             company_name = request.GET.get('companyName')
             if company_name:
-                insurances = insurances.filter(companyName=company_name)
+                query["companyName"] = company_name
 
             from_date = request.GET.get('from_date')
             to_date = request.GET.get('to_date')
 
-            if from_date:
-                try:
-                    insurances = insurances.filter(date__gte=from_date)
-                except ValueError:
-                    pass
-
-            if to_date:
-                try:
-                    insurances = insurances.filter(date__lte=to_date)
-                except ValueError:
-                    pass
+            if from_date or to_date:
+                date_query = {}
+                if from_date:
+                    date_query["$gte"] = from_date
+                if to_date:
+                    date_query["$lte"] = to_date
+                if date_query:
+                    query["date"] = date_query
 
             search_field = request.GET.get('search_field')
             search_value = request.GET.get('search_value')
 
             if search_field and search_value:
-                q = Q()
                 if search_field in ['billNumber', 'ipNumber', 'opNumber', 'patient_name']:
-                    q = Q(**{f"{search_field}__icontains": search_value})
+                    query[search_field] = {"$regex": search_value, "$options": "i"}
                 elif search_field == 'dateOfDischarge':
-                    q = Q(dateOfDischarge=search_value)
-                insurances = insurances.filter(q)
+                    query["dateOfDischarge"] = search_value
 
-            insurances = insurances.order_by('-date', '-id')
-            serializer = InsuranceSerializer(insurances, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            cursor = collection.find(query).sort([("date", -1), ("id", -1)])
+            
+            data_list = []
+            for doc in cursor:
+                doc.pop('_id', None)
+                data_list.append(doc)
+            # Resolve editHistory edited_by IDs to names
+            global_db = get_global_db()
+            for record in data_list:
+                raw_history = record.get('editHistory')
+                if isinstance(raw_history, str):
+                    try:
+                        import json as _json
+                        raw_history = _json.loads(raw_history)
+                    except Exception:
+                        raw_history = []
+                if isinstance(raw_history, list):
+                    for h in raw_history:
+                        emp_id = str(h.get('edited_by', ''))
+                        if emp_id:
+                            h['edited_by_name'] = get_employee_name_by_id(emp_id, db=global_db)
+                    record['editHistory'] = raw_history
+            return Response(data_list, status=status.HTTP_200_OK)
 
     except Exception as e:
         return Response({"error": "An error occurred", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -266,8 +282,13 @@ def submit_daycare(request):
 def insurance_update_combined(request, identifier):
     try:
         logger.info(f"Attempting to update record with identifier: {identifier}")
-        data = request.data.copy()
-
+        if hasattr(request.data, 'dict'):
+            data = request.data.dict()
+        else:
+            data = request.data.copy()
+            
+        # Strip auth fields injected by middleware
+        data = {k: v for k, v in data.items() if not k.startswith("auth-")}
         # Normalize date
         update_date = data.get("date")
         if update_date:
@@ -278,29 +299,36 @@ def insurance_update_combined(request, identifier):
         else:
             return Response({"error": "Date is required for update."}, status=400)
 
-        # Identify the insurance object
-        insurance = None
-        if identifier.upper().startswith("OP"):
-            insurance = Insurance.objects.filter(opNumber=identifier, date=parsed_date).first()
-        elif identifier.upper().startswith("IP"):
-            insurance = Insurance.objects.filter(ipNumber=identifier, date=parsed_date).first()
-        else:
-            insurance = (
-                Insurance.objects.filter(billNumber=identifier, date=parsed_date).first()
-                or Insurance.objects.filter(opNumber__endswith=identifier, date=parsed_date).first()
-                or Insurance.objects.filter(ipNumber__endswith=identifier, date=parsed_date).first()
-            )
-
-        if not insurance:
-            raise Insurance.DoesNotExist(f"No record found for identifier {identifier} and date {update_date}")
-
-        # Connect to MongoDB GridFS
+        # Connect to MongoDB GridFS and DB
         db = get_insurance_db()
         fs = GridFS(db)
+        collection = db["insurance_insurance"]
+
+        # Identify the insurance object using PyMongo
+        insurance = None
+        date_str = str(parsed_date)
+        
+        if identifier.isdigit():
+            insurance = collection.find_one({"id": int(identifier)})
+            
+        if not insurance:
+            if identifier.upper().startswith("OP"):
+                insurance = collection.find_one({"opNumber": identifier, "date": date_str})
+            elif identifier.upper().startswith("IP"):
+                insurance = collection.find_one({"ipNumber": identifier, "date": date_str})
+            else:
+                insurance = collection.find_one({"billNumber": identifier, "date": date_str})
+                if not insurance:
+                    insurance = collection.find_one({"opNumber": {"$regex": f"{identifier}$"}, "date": date_str})
+                if not insurance:
+                    insurance = collection.find_one({"ipNumber": {"$regex": f"{identifier}$"}, "date": date_str})
+
+        if not insurance:
+            return Response({"error": f"No record found for identifier {identifier} and date {update_date}"}, status=404)
 
         # File handling
-        patient_uhid = data.get("patient_uhid", insurance.patient_uhid).strip()
-        patient_name = data.get("patient_name", insurance.patient_name).strip()
+        patient_uhid = data.get("patient_uhid", insurance.get("patient_uhid", "")).strip()
+        patient_name = data.get("patient_name", insurance.get("patient_name", "")).strip()
 
         for file_field, suffix in [
             ("billingFile", "billing"),
@@ -312,8 +340,8 @@ def insurance_update_combined(request, identifier):
                 file_name = f"{patient_uhid}_{patient_name}_{suffix}"
                 file_id = fs.put(upload, filename=file_name)
                 data[file_field] = str(file_id)
-            elif getattr(insurance, file_field):
-                data[file_field] = getattr(insurance, file_field)
+            elif insurance.get(file_field):
+                data[file_field] = insurance.get(file_field)
 
         # Numeric fields cleanup
         for field in ["billAmount", "claimedAmount", "settledAmount", "approvalAmount", "pendingAmount"]:
@@ -339,6 +367,8 @@ def insurance_update_combined(request, identifier):
                     edit_history = json.loads(clean_json)
                 elif isinstance(edit_history_json, list):
                     edit_history = edit_history_json
+                
+                data["editHistory"] = edit_history
             except Exception as e:
                 logger.error(f"Failed to parse editHistory: {e}")
                 return Response({"error": "Failed to parse edit history"}, status=400)
@@ -355,25 +385,21 @@ def insurance_update_combined(request, identifier):
         )
         data["lastmodified_by"] = employee_id
         data["lastmodified_date"] = timezone.now()
-        # Use the serializer for the update
-        serializer = InsuranceSerializer(insurance, data=data, partial=True)
-        if serializer.is_valid():
-            updated_insurance = serializer.save()
-
-            # Update edit history if provided
-            if edit_history:
-                updated_insurance.editHistory = edit_history
-                updated_insurance.save()
-
-            return Response({
-                "message": "Insurance updated successfully",
-                "data": serializer.data
-            }, status=200)
-        else:
-            return Response({
-                "error": "Invalid data",
-                "details": serializer.errors
-            }, status=400)
+        
+        # Use PyMongo for update to preserve arrays (like editHistory) and prevent Djongo duplicates
+        collection = db["insurance_insurance"]
+        
+        # Remove fields we don't want to accidentally override
+        if 'id' in data:
+            del data['id']
+            
+        insurance_id = insurance.get('id')
+        collection.update_one({"id": insurance_id}, {"$set": data})
+        
+        return Response({
+            "message": "Insurance updated successfully",
+            "data": {"id": insurance_id, **data}
+        }, status=200)
 
     except Insurance.DoesNotExist as e:
         logger.error(f"Record not found for identifier: {identifier}")
@@ -522,7 +548,7 @@ def other_record_view(request):
             # Bulk fetch unique employee names in a single query
             employee_ids = set()
             for record in records:
-                for field in ['created_by', 'approved_by', 'final_approved_by', 'refund_approved_by']:
+                for field in ['created_by', 'approved_by', 'final_approved_by', 'refund_approved_by', 'refund_initiated_by']:
                     val = record.get(field)
                     if val:
                         employee_ids.add(str(val).strip())
@@ -567,7 +593,23 @@ def other_record_view(request):
                             record_copy['final_approved_by_name'] = get_employee_name_by_id(record_copy['final_approved_by'], db=global_db, cache=name_cache)
                         if record_copy.get('refund_approved_by'):
                             record_copy['refund_approved_by_name'] = get_employee_name_by_id(record_copy['refund_approved_by'], db=global_db, cache=name_cache)
-                        
+                        if record_copy.get('refund_initiated_by'):
+                            record_copy['refund_initiated_by_name'] = get_employee_name_by_id(record_copy['refund_initiated_by'], db=global_db, cache=name_cache)
+
+                        # Resolve editHistory edited_by IDs to names
+                        raw_history = record_copy.get('editHistory')
+                        if isinstance(raw_history, str):
+                            try:
+                                raw_history = json.loads(raw_history)
+                            except Exception:
+                                raw_history = []
+                        if isinstance(raw_history, list):
+                            for h in raw_history:
+                                emp_id = str(h.get('edited_by', ''))
+                                if emp_id:
+                                    h['edited_by_name'] = get_employee_name_by_id(emp_id, db=global_db, cache=name_cache)
+                            record_copy['editHistory'] = raw_history
+
                         processed_records.append(record_copy)
 
             for record in processed_records:
@@ -652,7 +694,8 @@ def other_record_view(request):
             basic_fields = [
                 'date', 'patient_name', 'patient_uhid', 'mobile_number',
                 'ip_op_type', 'doctor_name', 'company_name', 'treatment', 
-                'refund', 'status', 'has_refund'
+                'refund', 'status', 'has_refund', 'specificInsuranceCompany',
+                'is_refund_initiated'
             ]
 
             for field in basic_fields:
@@ -663,6 +706,20 @@ def other_record_view(request):
                         update_data[field] = str(request.data[field]) if request.data[field] else '0'
                     else:
                         update_data[field] = request.data[field]
+
+            # Handle payment_details update
+            if 'payment_details' in request.data:
+                update_data['payment_details'] = request.data['payment_details']
+
+            # Handle editHistory — parse if JSON string, store as array
+            if 'editHistory' in request.data:
+                history_raw = request.data['editHistory']
+                if isinstance(history_raw, str):
+                    try:
+                        history_raw = json.loads(history_raw)
+                    except Exception:
+                        history_raw = []
+                update_data['editHistory'] = history_raw if isinstance(history_raw, list) else []
             
             # Handle status change to 'Approved'
             if new_status == 'Approved':
@@ -670,6 +727,11 @@ def other_record_view(request):
                     update_data['is_approved'] = True
                     update_data['approved_by'] = employee_id
                     update_data['approved_date'] = datetime.now().isoformat()
+                    
+            # Handle refund initiated
+            if update_data.get('is_refund_initiated') and not record.get('is_refund_initiated', False):
+                update_data['refund_initiated_by'] = employee_id
+                update_data['refund_initiated_date'] = datetime.now().isoformat()
 
             # Set last modified info
             update_data['lastmodified_date'] = datetime.now().isoformat()
@@ -730,7 +792,7 @@ def other_record_report_view(request):
         # Bulk fetch unique employee names in a single query
         employee_ids = set()
         for record in records:
-            for field in ['created_by', 'approved_by', 'final_approved_by', 'refund_approved_by']:
+            for field in ['created_by', 'approved_by', 'final_approved_by', 'refund_approved_by', 'refund_initiated_by']:
                 val = record.get(field)
                 if val:
                     employee_ids.add(str(val).strip())
@@ -769,11 +831,15 @@ def other_record_report_view(request):
                         'mobile_number': record.get('mobile_number', ''),
                         'doctor_name': record.get('doctor_name', ''),
                         'company_name': record.get('company_name', ''),
+                        'specificInsuranceCompany': record.get('specificInsuranceCompany', ''),
                         'treatment': record.get('treatment', ''),
                         'amount': payment.get('amount', 0),
                         'payment_method': payment.get('payment_method', ''),
                         'has_refund': record.get('has_refund', False),
                         'refund': record.get('refund', 0),
+                        'is_refund_initiated': record.get('is_refund_initiated', False),
+                        'refund_initiated_by': record.get('refund_initiated_by', ''),
+                        'refund_initiated_date': record.get('refund_initiated_date', ''),
                         'status': record.get('status', 'Pending'),
                         'is_approved': record.get('is_approved', False),
                         'approved_by': record.get('approved_by', ''),
@@ -785,6 +851,7 @@ def other_record_report_view(request):
                         'refund_approved_by': record.get('refund_approved_by', ''),
                         'refund_approved_date': record.get('refund_approved_date', ''),
                         'created_by': record.get('created_by', ''),
+                        'editHistory': record.get('editHistory', []),
                     }
                     
                     # Get employee names for display
@@ -796,7 +863,22 @@ def other_record_report_view(request):
                         flat_record['final_approved_by_name'] = get_employee_name_by_id(flat_record['final_approved_by'], db=global_db, cache=name_cache)
                     if flat_record['refund_approved_by']:
                         flat_record['refund_approved_by_name'] = get_employee_name_by_id(flat_record['refund_approved_by'], db=global_db, cache=name_cache)
-                    
+                    if flat_record['refund_initiated_by']:
+                        flat_record['refund_initiated_by_name'] = get_employee_name_by_id(flat_record['refund_initiated_by'], db=global_db, cache=name_cache)
+                    # Resolve editHistory edited_by IDs to names
+                    raw_history = flat_record.get('editHistory')
+                    if isinstance(raw_history, str):
+                        try:
+                            raw_history = json.loads(raw_history)
+                        except Exception:
+                            raw_history = []
+                    if isinstance(raw_history, list):
+                        for h in raw_history:
+                            emp_id = str(h.get('edited_by', ''))
+                            if emp_id:
+                                h['edited_by_name'] = get_employee_name_by_id(emp_id, db=global_db, cache=name_cache)
+                        flat_record['editHistory'] = raw_history
+
                     flattened_data.append(flat_record)
         
         flattened_data.sort(key=lambda x: x['date'], reverse=True)
@@ -1613,9 +1695,23 @@ def rt_record_view(request):
                 
         records = list(collection.find(query).sort("rt_id", -1))
         records = convert_dates_to_strings(records)
+        global_db = get_global_db()
         for r in records:
             if '_id' in r:
                 r['_id'] = str(r['_id'])
+            # Resolve editHistory edited_by IDs to names
+            raw_history = r.get('editHistory')
+            if isinstance(raw_history, str):
+                try:
+                    raw_history = json.loads(raw_history)
+                except Exception:
+                    raw_history = []
+            if isinstance(raw_history, list):
+                for h in raw_history:
+                    emp_id = str(h.get('edited_by', ''))
+                    if emp_id:
+                        h['edited_by_name'] = get_employee_name_by_id(emp_id, db=global_db)
+                r['editHistory'] = raw_history
                 
         return Response({"success": True, "data": records})
 
@@ -1795,9 +1891,23 @@ def chemo_record_view(request):
                 
         records = list(collection.find(query).sort("chemo_id", -1))
         records = convert_dates_to_strings(records)
+        global_db = get_global_db()
         for r in records:
             if '_id' in r:
                 r['_id'] = str(r['_id'])
+            # Resolve editHistory edited_by IDs to names
+            raw_history = r.get('editHistory')
+            if isinstance(raw_history, str):
+                try:
+                    raw_history = json.loads(raw_history)
+                except Exception:
+                    raw_history = []
+            if isinstance(raw_history, list):
+                for h in raw_history:
+                    emp_id = str(h.get('edited_by', ''))
+                    if emp_id:
+                        h['edited_by_name'] = get_employee_name_by_id(emp_id, db=global_db)
+                r['editHistory'] = raw_history
                 
         return Response({"success": True, "data": records})
 
