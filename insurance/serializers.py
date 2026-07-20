@@ -148,6 +148,7 @@ class OtherRecordSerializer(serializers.Serializer):
     refund = serializers.CharField(max_length=500, required=False, allow_blank=True)
     payment_details = serializers.ListField(default=list)
     total_amount = serializers.SerializerMethodField()
+    editHistory = serializers.JSONField(required=False, default=list)
     
     def get_total_amount(self, obj):
         """Calculate total amount from payment details"""
