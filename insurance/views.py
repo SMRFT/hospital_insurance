@@ -623,6 +623,16 @@ def other_record_view(request):
                 k: v for k, v in request.data.items()
                 if k not in AUTH_FIELDS
             }
+
+            required_fields = ['patient_uhid', 'patient_name', 'company_name', 'treatment']
+            for field in required_fields:
+                if not validated_data.get(field):
+                    return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            payment_details = validated_data.get('payment_details', [])
+            if not payment_details or len(payment_details) == 0:
+                return Response({'error': 'At least one Payment Detail is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
+
             
             # Set default status and approval flags
             validated_data['status'] = 'Pending'
@@ -687,6 +697,15 @@ def other_record_view(request):
                             'error': f'Not Final Approved for {previous_date}',
                             'message': f'Previous day ({previous_date}) records must be final approved before updating this record'
                         }, status=status.HTTP_400_BAD_REQUEST)
+
+            required_fields = ['patient_uhid', 'patient_name', 'company_name', 'treatment']
+            for field in required_fields:
+                if not request.data.get(field):
+                    return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            payment_details = request.data.get('payment_details', record.get('payment_details', []))
+            if not payment_details or len(payment_details) == 0:
+                return Response({'error': 'At least one Payment Detail is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
 
             update_data = {}
             
@@ -835,6 +854,8 @@ def other_record_report_view(request):
                         'treatment': record.get('treatment', ''),
                         'amount': payment.get('amount', 0),
                         'payment_method': payment.get('payment_method', ''),
+                        'upi_details': payment.get('upi_details', ''),
+                        'payment_details': record.get('payment_details', []),
                         'has_refund': record.get('has_refund', False),
                         'refund': record.get('refund', 0),
                         'is_refund_initiated': record.get('is_refund_initiated', False),
@@ -1717,6 +1738,12 @@ def rt_record_view(request):
 
     employee_id = get_employee_id(request)
     data = request.data.copy()
+
+    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type', 'amount_to_be_paid']
+    for field in required_fields:
+        if not data.get(field):
+            return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
+
     data["created_by"] = employee_id
     
     # Remove auth fields and extract payment_details to avoid Djongo JSONField crash
@@ -1813,6 +1840,12 @@ def rt_record_update_view(request, pk):
     
     # Prepare update data from request
     update_data = {k: v for k, v in request.data.items() if k not in AUTH_FIELDS}
+
+    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type', 'amount_to_be_paid']
+    for field in required_fields:
+        if not update_data.get(field, record.get(field)):
+            return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
+
     update_data["lastmodified_by"] = employee_id
     update_data["lastmodified_date"] = datetime.now().isoformat()
     
@@ -1913,6 +1946,12 @@ def chemo_record_view(request):
 
     employee_id = get_employee_id(request)
     data = request.data.copy()
+
+    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type', 'medicine_details']
+    for field in required_fields:
+        if not data.get(field):
+            return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
+
     data["created_by"] = employee_id
     
     # Remove auth fields and extract payment_details to avoid Djongo JSONField crash
@@ -2010,6 +2049,12 @@ def chemo_record_update_view(request, pk):
     
     # Prepare update data from request
     update_data = {k: v for k, v in request.data.items() if k not in AUTH_FIELDS}
+
+    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type', 'medicine_details']
+    for field in required_fields:
+        if not update_data.get(field, record.get(field)):
+            return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
+
     update_data["lastmodified_by"] = employee_id
     update_data["lastmodified_date"] = datetime.now().isoformat()
     

@@ -89,8 +89,8 @@ class OtherRecord(AuditModel):
     patient_name = models.CharField(max_length=200)
     mobile_number = models.CharField(max_length=15)
     doctor_name = models.CharField(max_length=200, blank=True, null=True)
-    company_name = models.CharField(max_length=200, blank=True, null=True)
-    treatment = models.CharField(max_length=500, blank=True, null=True)
+    company_name = models.CharField(max_length=200)
+    treatment = models.CharField(max_length=500)
     has_refund = models.BooleanField(default=False)
     refund = models.CharField(max_length=500, blank=True, null=True)
     payment_details = models.JSONField(default=list)
@@ -126,7 +126,7 @@ class OtherRecord(AuditModel):
 class Enquiry(AuditModel):
     
     enquiry_id = models.IntegerField(primary_key=True)
-    date = models.DateField(null=True, blank=True)
+    date = models.DateField()
 
     ipNumber = models.CharField(max_length=100, null=True, blank=True)
     opNumber = models.CharField(max_length=100, null=True, blank=True)
@@ -142,7 +142,7 @@ class Enquiry(AuditModel):
         blank=True
     )
 
-    reasonForApproach = models.TextField(null=True, blank=True)
+    reasonForApproach = models.TextField()
 
     def save(self, *args, **kwargs):
         if self.enquiry_id is None:
@@ -175,12 +175,12 @@ class FollowUp(AuditModel):
 # New Models for RT and Chemo
 class RTRecord(AuditModel):
     rt_id = models.IntegerField(primary_key=True)
-    date = models.DateField(blank=True, null=True)
+    date = models.DateField()
     patient_name = models.CharField(max_length=255)
-    date_of_admission = models.DateField(blank=True, null=True)
-    date_of_discharge = models.DateField(blank=True, null=True)
-    insurance_type = models.CharField(max_length=255, blank=True, null=True)
-    amount_to_be_paid = models.CharField(max_length=255, blank=True, null=True)
+    date_of_admission = models.DateField()
+    date_of_discharge = models.DateField()
+    insurance_type = models.CharField(max_length=255)
+    amount_to_be_paid = models.CharField(max_length=255)
     payment_details = models.JSONField(default=list)
     status = models.CharField(max_length=50, default='Pending')
     editHistory = models.JSONField(default=list)
@@ -196,13 +196,13 @@ class RTRecord(AuditModel):
 
 class ChemoRecord(AuditModel):
     chemo_id = models.IntegerField(primary_key=True)
-    date = models.DateField(blank=True, null=True)
+    date = models.DateField()
     patient_name = models.CharField(max_length=255)
-    date_of_admission = models.DateField(blank=True, null=True)
-    date_of_discharge = models.DateField(blank=True, null=True)
-    insurance_type = models.CharField(max_length=255, blank=True, null=True)
+    date_of_admission = models.DateField()
+    date_of_discharge = models.DateField()
+    insurance_type = models.CharField(max_length=255)
     amount_to_be_paid = models.CharField(max_length=255, blank=True, null=True)
-    medicine_details = models.TextField(blank=True, null=True)
+    medicine_details = models.TextField()
     payment_details = models.JSONField(default=list)
     status = models.CharField(max_length=50, default='Pending')
     editHistory = models.JSONField(default=list)
