@@ -1793,7 +1793,8 @@ def rt_record_view(request):
         "patient_name": data.get("patient_name", ""),
         "insurance_type": data.get("insurance_type", ""),
         "specificInsuranceCompany": data.get("specificInsuranceCompany", ""),
-        "amount_to_be_paid": data.get("amount_to_be_paid", "")
+        "amount_to_be_paid": data.get("amount_to_be_paid", ""),
+        "is_approved": False
     }
     
     # Process dates
@@ -1842,6 +1843,17 @@ def rt_record_update_view(request, pk):
     
     # Prepare update data from request
     update_data = {k: v for k, v in request.data.items() if k not in AUTH_FIELDS}
+
+    if request.data.get('action') == 'Approve':
+        update_data = {
+            'is_approved': True,
+            'approved_by': employee_id,
+            'approved_date': datetime.now().isoformat(),
+            'lastmodified_by': employee_id,
+            'lastmodified_date': datetime.now().isoformat()
+        }
+        collection.update_one({"rt_id": pk}, {"$set": update_data})
+        return Response({"success": True, "message": "RT Record approved successfully"})
 
     required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type', 'amount_to_be_paid']
     for field in required_fields:

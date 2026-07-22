@@ -183,6 +183,11 @@ class RTRecord(AuditModel):
     amount_to_be_paid = models.CharField(max_length=255)
     payment_details = models.JSONField(default=list)
     status = models.CharField(max_length=50, default='Pending')
+    
+    is_approved = models.BooleanField(default=False)
+    approved_by = models.CharField(max_length=500, blank=True, null=True)
+    approved_date = models.DateTimeField(blank=True, null=True)
+
     editHistory = models.JSONField(default=list)
 
     def __str__(self):
