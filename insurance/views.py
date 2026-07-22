@@ -698,14 +698,16 @@ def other_record_view(request):
                             'message': f'Previous day ({previous_date}) records must be final approved before updating this record'
                         }, status=status.HTTP_400_BAD_REQUEST)
 
-            required_fields = ['patient_uhid', 'patient_name', 'company_name', 'treatment']
-            for field in required_fields:
-                if not request.data.get(field):
-                    return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            payment_details = request.data.get('payment_details', record.get('payment_details', []))
-            if not payment_details or len(payment_details) == 0:
-                return Response({'error': 'At least one Payment Detail is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
+            is_approving = new_status in ['Approved', 'Collected', 'Gate Pass Issued', 'Final Approved']
+            if not is_approving:
+                required_fields = ['patient_uhid', 'patient_name', 'company_name', 'treatment']
+                for field in required_fields:
+                    if not request.data.get(field):
+                        return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
+                
+                payment_details = request.data.get('payment_details', record.get('payment_details', []))
+                if not payment_details or len(payment_details) == 0:
+                    return Response({'error': 'At least one Payment Detail is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
 
             update_data = {}
             
