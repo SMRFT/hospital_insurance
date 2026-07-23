@@ -1722,6 +1722,17 @@ def rt_record_view(request):
         for r in records:
             if '_id' in r:
                 r['_id'] = str(r['_id'])
+                
+            if r.get('approved_by'):
+                r['approved_by_name'] = get_employee_name_by_id(str(r['approved_by']).strip(), db=global_db)
+            else:
+                r['approved_by_name'] = '-'
+                
+            if r.get('created_by'):
+                r['created_by_name'] = get_employee_name_by_id(str(r['created_by']).strip(), db=global_db)
+            else:
+                r['created_by_name'] = '-'
+                
             # Resolve editHistory edited_by IDs to names
             raw_history = r.get('editHistory')
             if isinstance(raw_history, str):
@@ -1741,7 +1752,7 @@ def rt_record_view(request):
     employee_id = get_employee_id(request)
     data = request.data.copy()
 
-    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type', 'amount_to_be_paid']
+    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type']
     for field in required_fields:
         if not data.get(field):
             return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1791,6 +1802,9 @@ def rt_record_view(request):
         "payment_details": payment_details,
         "status": status_val,
         "patient_name": data.get("patient_name", ""),
+        "patient_uhid": data.get("patient_uhid", ""),
+        "patient_ip_number": data.get("patient_ip_number", ""),
+        "mobile_number": data.get("mobile_number", ""),
         "insurance_type": data.get("insurance_type", ""),
         "specificInsuranceCompany": data.get("specificInsuranceCompany", ""),
         "amount_to_be_paid": data.get("amount_to_be_paid", ""),
@@ -1855,7 +1869,7 @@ def rt_record_update_view(request, pk):
         collection.update_one({"rt_id": pk}, {"$set": update_data})
         return Response({"success": True, "message": "RT Record approved successfully"})
 
-    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type', 'amount_to_be_paid']
+    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type']
     for field in required_fields:
         if not update_data.get(field, record.get(field)):
             return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1887,8 +1901,9 @@ def rt_record_update_view(request, pk):
     # Calculate total payments and set status
     expected_amount = 0
     try:
-        if update_data.get("amount_to_be_paid"):
-            expected_amount = float(update_data.get("amount_to_be_paid"))
+        amt = update_data.get("amount_to_be_paid", record.get("amount_to_be_paid"))
+        if amt:
+            expected_amount = float(amt)
     except (ValueError, TypeError):
         pass
 
@@ -1942,6 +1957,17 @@ def chemo_record_view(request):
         for r in records:
             if '_id' in r:
                 r['_id'] = str(r['_id'])
+                
+            if r.get('approved_by'):
+                r['approved_by_name'] = get_employee_name_by_id(str(r['approved_by']).strip(), db=global_db)
+            else:
+                r['approved_by_name'] = '-'
+                
+            if r.get('created_by'):
+                r['created_by_name'] = get_employee_name_by_id(str(r['created_by']).strip(), db=global_db)
+            else:
+                r['created_by_name'] = '-'
+                
             # Resolve editHistory edited_by IDs to names
             raw_history = r.get('editHistory')
             if isinstance(raw_history, str):
@@ -1961,7 +1987,7 @@ def chemo_record_view(request):
     employee_id = get_employee_id(request)
     data = request.data.copy()
 
-    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type', 'medicine_details']
+    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type']
     for field in required_fields:
         if not data.get(field):
             return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
@@ -2011,6 +2037,9 @@ def chemo_record_view(request):
         "payment_details": payment_details,
         "status": status_val,
         "patient_name": data.get("patient_name", ""),
+        "patient_uhid": data.get("patient_uhid", ""),
+        "patient_ip_number": data.get("patient_ip_number", ""),
+        "mobile_number": data.get("mobile_number", ""),
         "insurance_type": data.get("insurance_type", ""),
         "specificInsuranceCompany": data.get("specificInsuranceCompany", ""),
         "amount_to_be_paid": data.get("amount_to_be_paid", ""),
@@ -2064,7 +2093,7 @@ def chemo_record_update_view(request, pk):
     # Prepare update data from request
     update_data = {k: v for k, v in request.data.items() if k not in AUTH_FIELDS}
 
-    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type', 'medicine_details']
+    required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type']
     for field in required_fields:
         if not update_data.get(field, record.get(field)):
             return Response({'error': f'{field.replace("_", " ").title()} is mandatory'}, status=status.HTTP_400_BAD_REQUEST)
@@ -2096,8 +2125,9 @@ def chemo_record_update_view(request, pk):
     # Calculate total payments and set status
     expected_amount = 0
     try:
-        if update_data.get("amount_to_be_paid"):
-            expected_amount = float(update_data.get("amount_to_be_paid"))
+        amt = update_data.get("amount_to_be_paid", record.get("amount_to_be_paid"))
+        if amt:
+            expected_amount = float(amt)
     except (ValueError, TypeError):
         pass
 
