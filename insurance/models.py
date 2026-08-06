@@ -183,6 +183,7 @@ class RTRecord(AuditModel):
     date_of_discharge = models.DateField()
     insurance_type = models.CharField(max_length=255)
     amount_to_be_paid = models.CharField(max_length=255)
+    adjusted_amount = models.CharField(max_length=255, blank=True, null=True, default='0')
     payment_details = models.JSONField(default=list)
     status = models.CharField(max_length=50, default='Pending')
     
@@ -212,9 +213,15 @@ class ChemoRecord(AuditModel):
     date_of_discharge = models.DateField()
     insurance_type = models.CharField(max_length=255)
     amount_to_be_paid = models.CharField(max_length=255, blank=True, null=True)
+    adjusted_amount = models.CharField(max_length=255, blank=True, null=True, default='0')
     medicine_details = models.TextField(blank=True, null=True)
     payment_details = models.JSONField(default=list)
     status = models.CharField(max_length=50, default='Pending')
+    
+    is_approved = models.BooleanField(default=False)
+    approved_by = models.CharField(max_length=500, blank=True, null=True)
+    approved_date = models.DateTimeField(blank=True, null=True)
+
     editHistory = models.JSONField(default=list)
 
     def __str__(self):

@@ -1915,11 +1915,20 @@ def rt_record_update_view(request, pk):
         except (ValueError, TypeError):
             pass
 
-    if total_paid == 0:
+    adjusted_amount = 0
+    try:
+        adj = update_data.get("adjusted_amount", record.get("adjusted_amount", "0"))
+        if adj:
+            adjusted_amount = float(adj)
+    except (ValueError, TypeError):
+        pass
+
+    total_settled = total_paid + adjusted_amount
+    if total_settled == 0:
         update_data["status"] = "Pending"
-    elif total_paid >= expected_amount:
+    elif expected_amount > 0 and total_settled >= expected_amount:
         update_data["status"] = "Paid"
-    else:
+    elif total_settled > 0:
         update_data["status"] = "Partially Paid"
         
     collection.update_one({"rt_id": pk}, {"$set": update_data})
@@ -2015,11 +2024,19 @@ def chemo_record_view(request):
         except (ValueError, TypeError):
             pass
 
-    if total_paid == 0:
+    adjusted_amount = 0
+    try:
+        if data.get("adjusted_amount"):
+            adjusted_amount = float(data.get("adjusted_amount"))
+    except (ValueError, TypeError):
+        pass
+
+    total_settled = total_paid + adjusted_amount
+    if total_settled == 0:
         status_val = "Pending"
-    elif total_paid >= expected_amount:
+    elif expected_amount > 0 and total_settled >= expected_amount:
         status_val = "Paid"
-    else:
+    elif total_settled > 0:
         status_val = "Partially Paid"
     
     # Create record manually with PyMongo to avoid Djongo serializer crashes
@@ -2043,6 +2060,7 @@ def chemo_record_view(request):
         "insurance_type": data.get("insurance_type", ""),
         "specificInsuranceCompany": data.get("specificInsuranceCompany", ""),
         "amount_to_be_paid": data.get("amount_to_be_paid", ""),
+        "adjusted_amount": data.get("adjusted_amount", "0"),
         "medicine_details": data.get("medicine_details", "")
     }
     
@@ -2093,6 +2111,17 @@ def chemo_record_update_view(request, pk):
     # Prepare update data from request
     update_data = {k: v for k, v in request.data.items() if k not in AUTH_FIELDS}
 
+    if request.data.get('action') == 'Approve':
+        update_data = {
+            'is_approved': True,
+            'approved_by': employee_id,
+            'approved_date': datetime.now().isoformat(),
+            'lastmodified_by': employee_id,
+            'lastmodified_date': datetime.now().isoformat()
+        }
+        collection.update_one({"chemo_id": pk}, {"$set": update_data})
+        return Response({"success": True, "message": "Chemo Record approved successfully"})
+
     required_fields = ['date', 'patient_name', 'date_of_admission', 'date_of_discharge', 'insurance_type']
     for field in required_fields:
         if not update_data.get(field, record.get(field)):
@@ -2139,11 +2168,20 @@ def chemo_record_update_view(request, pk):
         except (ValueError, TypeError):
             pass
 
-    if total_paid == 0:
+    adjusted_amount = 0
+    try:
+        adj = update_data.get("adjusted_amount", record.get("adjusted_amount", "0"))
+        if adj:
+            adjusted_amount = float(adj)
+    except (ValueError, TypeError):
+        pass
+
+    total_settled = total_paid + adjusted_amount
+    if total_settled == 0:
         update_data["status"] = "Pending"
-    elif total_paid >= expected_amount:
+    elif expected_amount > 0 and total_settled >= expected_amount:
         update_data["status"] = "Paid"
-    else:
+    elif total_settled > 0:
         update_data["status"] = "Partially Paid"
         
     collection.update_one({"chemo_id": pk}, {"$set": update_data})
